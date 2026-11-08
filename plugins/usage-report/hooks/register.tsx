@@ -138,8 +138,8 @@ async function readToday($: Engine, dayStart: number): Promise<{ files: FileInpu
 function refresh($: Engine): Promise<Report | null> {
   if (running) return running
   running = (async () => {
-    await update($, snapshot, s => ({ ...s, loading: true }))
     try {
+      await update($, snapshot, s => ({ ...s, loading: true }))
       const now = await $.clock.now()
       const dayStart = startOfDay(now)
       // A new day: yesterday's entries are of no more use.

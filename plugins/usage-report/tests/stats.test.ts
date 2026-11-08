@@ -37,6 +37,15 @@ describe('one transcript', () => {
     expect(stats.calls.t1).toEqual({ tool: 'Bash', outcome: 'ok' })
   })
 
+  test('a response written over several lines keeps its largest usage reading', () => {
+    const partial = { input_tokens: 10, output_tokens: 1, cache_read_input_tokens: 100, cache_creation_input_tokens: 20 }
+    const text = [
+      line({ type: 'assistant', timestamp: at('10:00:00'), message: { id: 'm1', model: 'claude-opus-5-5', usage: partial, content: [] } }),
+      assistant('m1', '10:00:01', []),
+    ].join('\n')
+    expect(parseTranscript(text, DAY).messages.m1!.tokens).toEqual({ input: 10, output: 5, cacheRead: 100, cacheWrite: 20 })
+  })
+
   test('tells errors, denials and retries apart', () => {
     const text = [
       assistant('m1', '10:00:00', [call('t1', 'Bash')]),

@@ -27,6 +27,14 @@ export const emptyTokens = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, c
 
 export const totalOf = (t: Tokens): number => t.input + t.output + t.cacheRead + t.cacheWrite
 
+/** Each count the larger of two readings of the same response. */
+export const maxTokens = (a: Tokens, b: Tokens): Tokens => ({
+  input: Math.max(a.input, b.input),
+  output: Math.max(a.output, b.output),
+  cacheRead: Math.max(a.cacheRead, b.cacheRead),
+  cacheWrite: Math.max(a.cacheWrite, b.cacheWrite),
+})
+
 type Usage = {
   input_tokens?: number
   output_tokens?: number
@@ -86,19 +94,20 @@ export function createParser(dayStart: number, sidechain = false): { line: (raw:
       }
       const id = line.message?.id
       const model = line.message?.model
-      if (id && model && model !== '<synthetic>' && !stats.messages[id]) {
+      if (id && model && model !== '<synthetic>') {
         const u = line.message?.usage ?? {}
-        stats.messages[id] = {
-          model,
-          effort: typeof line.effort === 'string' ? line.effort : null,
-          at,
-          tokens: {
-            input: num(u.input_tokens),
-            output: num(u.output_tokens),
-            cacheRead: num(u.cache_read_input_tokens),
-            cacheWrite: num(u.cache_creation_input_tokens),
-          },
+        const tokens: Tokens = {
+          input: num(u.input_tokens),
+          output: num(u.output_tokens),
+          cacheRead: num(u.cache_read_input_tokens),
+          cacheWrite: num(u.cache_creation_input_tokens),
         }
+        const seen = stats.messages[id]
+        // A response's blocks are written one line each, and an early line can
+        // carry the usage as it stood mid-stream: keep the largest reading.
+        stats.messages[id] = seen
+          ? { ...seen, tokens: maxTokens(seen.tokens, tokens) }
+          : { model, effort: typeof line.effort === 'string' ? line.effort : null, at, tokens }
       }
       if (Array.isArray(content)) {
         for (const block of content) {
@@ -179,7 +188,11 @@ export function report(files: readonly FileInput[], dayStart: number, now: numbe
     if (ids.length === 0 && Object.keys(s.calls).length === 0) continue
     if (file.kind === 'session') sessions += 1
     else bump(agentTypes, file.agentType ?? 'agent')
-    for (const id of ids) if (!messages.has(id)) messages.set(id, s.messages[id]!)
+    for (const id of ids) {
+      const row = s.messages[id]!
+      const seen = messages.get(id)
+      messages.set(id, seen ? { ...seen, tokens: maxTokens(seen.tokens, row.tokens) } : row)
+    }
     for (const [id, call] of Object.entries(s.calls)) {
       const seen = calls.get(id)
       if (!seen || (seen.outcome === null && call.outcome !== null)) calls.set(id, call)
