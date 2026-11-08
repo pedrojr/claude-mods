@@ -1,0 +1,7 @@
+{
+  "name": "agents-panel",
+  "version": "0.1.0",
+  "description": "Side pane listing the session's running agents and subagents; click one to jump to its transcript.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

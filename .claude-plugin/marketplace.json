@@ -7,6 +7,11 @@
       "name": "usage-bar",
       "source": "./plugins/usage-bar",
       "description": "Compact one-line usage: current session and this week, each with percent, a bar and the reset time."
+    },
+    {
+      "name": "agents-panel",
+      "source": "./plugins/agents-panel",
+      "description": "Side pane listing the session's running agents and subagents; click one to jump to its transcript."
     }
   ]
 }
