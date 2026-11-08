@@ -19,13 +19,14 @@ Session ███░░░░░░░░░  23% [16:00]  │  Week ███�
 
 ## Install
 
-At the prompt of a Claude Code terminal session (replace `<owner>` with the GitHub account that holds the repository):
+From a shell:
 
-```
-/plugin install usage-bar --marketplace <owner>/claude-mods
+```bash
+claude plugin marketplace add pedrojr/claude-mods
+claude plugin install usage-bar@claude-mods --scope user
 ```
 
-See the [repository README](../../README.md) for the shell and desktop app install steps.
+See the [repository README](../../README.md) for the terminal prompt and desktop app install steps.
 
 ## Settings
 
