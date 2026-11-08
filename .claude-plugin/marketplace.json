@@ -1,0 +1,12 @@
+{
+  "name": "claude-mods",
+  "owner": { "name": "pedrojr" },
+  "description": "A collection of small mods for Claude Code.",
+  "plugins": [
+    {
+      "name": "usage-bar",
+      "source": "./plugins/usage-bar",
+      "description": "Compact one-line usage: current session and this week, each with percent, a bar and the reset time."
+    }
+  ]
+}

@@ -1,0 +1,3 @@
+# Types the Claude Code engine generates into each loaded mod
+plugins/*/.claude-plugin/types/
+node_modules/
