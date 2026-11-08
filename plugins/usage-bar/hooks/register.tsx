@@ -181,6 +181,8 @@ export const register: Register = on => {
   })
 
   on('turn.complete', async ($, e, next) => {
+    // A subagent's turn warms its own cache, not the main conversation's.
+    if (e.agentId !== undefined) return next(e)
     const [usage, id, now] = await Promise.all([$.session.usage(), $.session.id(), $.clock.now()])
     const value: Cache = {
       lastResponseAt: now,
