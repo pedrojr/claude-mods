@@ -1,31 +1,35 @@
 # agents-panel
 
-A side pane for Claude Code that gathers in one place everything running on your machine: every open session (desktop app, terminal, VS Code), the agents and subagents of the current session, and a short line on what each one is doing right now.
+A side pane for Claude Code that shows, in one place, what is running on your machine: the sessions, agents and subagents that are active or still have a warm prompt cache, each with a one-line note on what it did last.
 
 ```
-2 busy · 6 idle · 2 agents                     ← Main
-● Commit and agents mod
-  this session · claude-mods · 4m12s
+2 active · 3 sessions
+● Commit and agents mod  this session · 0s
   ↳ Edit: register.tsx
-  ● Review auth module   Explore · 1m12s
-    ● Find token checks  Explore · 34s
-● Refactor billing
-  desktop · work · 2m05s
+  ● Review auth module  Explore · 12s
+    ↳ Grep: verifyToken
+● Refactor billing  desktop · 4s
   ↳ Bash: Run tests
-○ resumos-60
-  VS Code · resumos · idle 1h20m
-  ↳ Summarize the notes
+● Summarize notes  VS Code · 21m
+  ↳ Wrote the summary to notes.md.
 ```
 
-- **Sessions** come from the registry Claude Code keeps in `~/.claude/sessions/`, one entry per open session. Busy ones come first, marked `●`, with how long they have been busy. Idle ones are dimmed, marked `○`, and limited to the 12 most recent.
-- **The line under each session** (`↳`) is what it did last: its latest tool call (`Bash: Run tests`, `Edit: register.tsx`), or else the first line of its last reply, or its last prompt. It is read from the session's transcript in `~/.claude/projects/` and re-read only when that file changes.
-- **Agents** of the current session sit under it, nested by the agent that spawned them, with status and elapsed time: `●` running, `◌` pending, `◐` waiting, `○` idle, `✓` completed, `✗` failed, `■` killed. Finished agents stay listed, dimmed, up to the last 15.
+## What shows
 
-## Clicking
+- **Sessions** from every surface on the machine: desktop app, terminal, VS Code. They come from the registry Claude Code keeps in `~/.claude/sessions/`.
+- **Agents and subagents** of every session, nested under it. This session's are nested by the agent that spawned them.
+- Only what is **active**, or whose **prompt cache has not expired** (1 hour after its last write). Cold, idle items drop off the list.
+- **The dot** is green while the item runs and light gray otherwise.
+- **The line under each item** (`↳`) is always shown: its latest tool call (`Bash: Run tests`, `Edit: register.tsx`), or the first line of its last reply, or its last prompt. It comes from the item's transcript and is re-read only when that file changes.
+- Next to each title: where it runs (or the agent type) and how long ago it last wrote.
 
-- **An agent** (or its number, 1 to 9, while the pane has focus) puts that agent's transcript in the main view. The row you are viewing is marked `▶`. `← Main` (or `m`) goes back.
+## Clicking a title
+
+- **A session in the desktop app** brings that session to the front, through the app's own link `claude://code/continue?session=local_<id>`. If the app's entry points are switched off, nothing happens.
 - **This session** goes back to its main conversation.
-- **Another session** copies its session id and says where it runs. A plugin cannot switch the app or another terminal to a different session; find it in the desktop app's sidebar, or run `claude --resume <id>` once it is closed.
+- **An agent of this session** puts its transcript in the main view. `← Main` (or `m`) goes back.
+- **An agent of another session** opens the session it belongs to.
+- **A session in the terminal or VS Code** cannot be brought to the front by a plugin; a toast says where it runs.
 
 ## Where it shows
 
@@ -34,11 +38,13 @@ The mod shows only in sessions that load it, so install it first (below). Plugin
 - **Desktop app (and other app surfaces):** the pane opens by itself at session start and whenever an agent is spawned, as a column on the right.
 - **Terminal:** the pane opens only when you ask, because the CLI already has its own tasks list. With the transcript in fullscreen mode it docks on the right; otherwise it sits above the prompt.
 - **`/agents-panel`**, on either surface, opens it. It runs mid-turn, while agents are working.
-- **`● 1 other session busy · 2 agents running [Agents]`**: while the pane is closed and something is running, this one-line chip sits above the prompt; its button opens the pane.
+- **`● 1 other session active · 2 agents running [Agents]`**: while the pane is closed and something else runs, this one-line chip sits above the prompt; its button opens the pane.
 
 Once you close the pane (its close mark, or `ctrl+x x` in the terminal), it stops opening by itself for the rest of that session. The chip and the command still bring it back.
 
-The list refreshes every 3 seconds. Each session that has the mod installed draws its own pane; sessions without it still show up in the others' lists.
+## Cost
+
+No model tokens: the mod runs outside the conversation. It checks the registry and file times every 3 seconds and reads a transcript only when it changed and is warm. The only footprint in the conversation is the `/agents-panel` entry in the command list.
 
 ## Install
 
@@ -53,8 +59,12 @@ Sessions already open do not pick it up: start a new one. See the [repository RE
 
 ## Settings
 
-None. Edit the constants at the top of `hooks/register.tsx`: `POLL_MS` (refresh rate), `MAX_FINISHED` (finished agents kept), `MAX_IDLE_SESSIONS` (idle sessions listed), `MAX_TRANSCRIPT_BYTES` (larger transcripts get no activity line) and `DOCK_COLUMNS` (docked width).
+None. Edit the constants at the top of `hooks/register.tsx`: `POLL_MS` (refresh rate), `CACHE_TTL_MS` (set 5 minutes if your prompt cache lives 5 minutes), `MAX_TRANSCRIPT_BYTES` (larger transcripts get no last line) and `DOCK_COLUMNS` (docked width).
+
+## Limits
+
+The session registry and transcript layout under `~/.claude` are Claude Code internals, not a public format; a future version may change them and empty the list until the mod is updated.
 
 ## Privacy
 
-The mod only reads local files under your Claude Code config folder (`CLAUDE_CONFIG_DIR`, or `~/.claude`): the session registry and the tail of each open session's transcript. Nothing leaves the machine.
+The mod only reads local files under your Claude Code config folder (`CLAUDE_CONFIG_DIR`, or `~/.claude`). Nothing leaves the machine. Opening a desktop session runs the OS's URL opener (`rundll32 url.dll,FileProtocolHandler` on Windows, `open` on macOS, `xdg-open` on Linux) with the app's `claude://` link.

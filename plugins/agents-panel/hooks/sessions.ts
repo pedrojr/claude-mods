@@ -1,23 +1,34 @@
-// Pure helpers for the session list: parsing the registry Claude Code keeps in
-// <config>/sessions/<pid>.json and the tail of a session's transcript.
+// Pure helpers: parsing what Claude Code keeps on disk for each session.
+//   <config>/sessions/<pid>.json                              one per open session
+//   <config>/projects/<slug>/<sessionId>.jsonl                its transcript
+//   <config>/projects/<slug>/<sessionId>/subagents/agent-<id>.jsonl | .meta.json
 
-import type { SessionRow } from '../types'
+import type { AgentView, SessionView } from '../types'
 
-/** One `<config>/sessions/<pid>.json` as Claude Code writes it (the fields this mod reads). */
+/** A registry entry: what the pane needs from `<config>/sessions/<pid>.json`. */
+export type RegistryRow = {
+  sessionId: string
+  hostSessionId: string | null
+  name: string
+  cwd: string
+  entrypoint: string
+  busy: boolean
+}
+
 type RegistryEntry = {
   pid?: number
   sessionId?: string
+  hostSessionId?: string
   cwd?: string
   name?: string
   status?: string
   entrypoint?: string
-  startedAt?: number
-  updatedAt?: number
-  statusUpdatedAt?: number
 }
 
+const BUSY = new Set(['busy', 'running', 'working', 'waiting'])
+
 /** Parses one registry file; null when it is not a session entry. */
-export function parseRegistry(text: string): Omit<SessionRow, 'activity' | 'isSelf'> | null {
+export function parseRegistry(text: string): RegistryRow | null {
   let entry: RegistryEntry
   try {
     entry = JSON.parse(text) as RegistryEntry
@@ -28,13 +39,34 @@ export function parseRegistry(text: string): Omit<SessionRow, 'activity' | 'isSe
   const cwd = typeof entry.cwd === 'string' ? entry.cwd : ''
   return {
     sessionId: entry.sessionId,
-    pid: entry.pid,
+    hostSessionId: typeof entry.hostSessionId === 'string' && /^local_[A-Za-z0-9-]{1,64}$/.test(entry.hostSessionId) ? entry.hostSessionId : null,
     name: entry.name?.trim() || folderOf(cwd) || entry.sessionId.slice(0, 8),
     cwd,
-    status: typeof entry.status === 'string' ? entry.status : 'idle',
     entrypoint: surfaceLabel(entry.entrypoint),
-    since: entry.statusUpdatedAt ?? entry.updatedAt ?? entry.startedAt ?? 0,
+    busy: BUSY.has(entry.status ?? ''),
   }
+}
+
+/** A subagent's `agent-<id>.meta.json`. */
+export type AgentMeta = { label: string; type: string; finished: boolean }
+
+export function parseAgentMeta(text: string): AgentMeta | null {
+  try {
+    const meta = JSON.parse(text) as { description?: string; agentType?: string; finished?: boolean }
+    return {
+      label: meta.description?.trim() || meta.agentType || 'agent',
+      type: meta.agentType ?? 'agent',
+      finished: meta.finished === true,
+    }
+  } catch {
+    return null
+  }
+}
+
+/** The agent id in `agent-<id>.jsonl`; null for any other file. */
+export function agentIdOf(fileName: string): string | null {
+  const match = /^agent-([A-Za-z0-9_-]+)\.jsonl$/.exec(fileName)
+  return match ? match[1]! : null
 }
 
 /** The last segment of a path, either separator. */
@@ -63,26 +95,24 @@ export function projectSlug(cwd: string): string {
   return cwd.replace(/[^a-zA-Z0-9]/g, '-')
 }
 
-const MAX_ACTIVITY = 70
+const MAX_LINE = 80
 
 function clip(text: string): string {
-  const line = text.replace(/\s+/g, ' ').trim()
-  return line.length > MAX_ACTIVITY ? `${line.slice(0, MAX_ACTIVITY - 1)}…` : line
+  // Markdown marks read as noise in one plain line.
+  const line = text
+    .replace(/\*\*|__|`/g, '')
+    .replace(/^#+\s*/, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+  return line.length > MAX_LINE ? `${line.slice(0, MAX_LINE - 1)}…` : line
 }
 
 /** A short phrase for one tool call: the tool and what it acts on. */
 export function describeTool(name: string, input: Record<string, unknown>): string {
   const str = (key: string) => (typeof input[key] === 'string' ? (input[key] as string) : undefined)
+  const path = str('file_path') ?? str('notebook_path')
   const target =
-    str('description') ??
-    (str('file_path') && folderOf(str('file_path')!)) ??
-    (str('notebook_path') && folderOf(str('notebook_path')!)) ??
-    str('pattern') ??
-    str('url') ??
-    str('query') ??
-    str('skill') ??
-    str('command') ??
-    str('prompt')
+    str('description') ?? (path && folderOf(path)) ?? str('pattern') ?? str('url') ?? str('query') ?? str('skill') ?? str('command') ?? str('prompt')
   const tool = name.startsWith('mcp__') ? (name.split('__').pop() ?? name) : name
   return clip(target ? `${tool}: ${target}` : tool)
 }
@@ -91,13 +121,13 @@ type Block = { type?: string; name?: string; input?: Record<string, unknown>; te
 type Line = { type?: string; isSidechain?: boolean; message?: { content?: string | Block[] } }
 
 /**
- * What a session did last, from the tail of its transcript: its last tool call,
- * else the first line of its last reply, else its last prompt.
+ * What a transcript did last: its last tool call, else the first line of its
+ * last reply, else its last prompt. `sidechain` reads a subagent's own file,
+ * whose lines are all marked as side-chain.
  */
-export function activityFromTranscript(text: string): string | null {
+export function lastLineOf(text: string, sidechain = false): string | null {
   const lines = text.split('\n')
   let prompt: string | null = null
-  // Only the last few hundred lines matter.
   for (let i = lines.length - 1; i >= Math.max(0, lines.length - 400); i -= 1) {
     const raw = lines[i]
     if (!raw || raw[0] !== '{') continue
@@ -107,7 +137,7 @@ export function activityFromTranscript(text: string): string | null {
     } catch {
       continue
     }
-    if (line.isSidechain) continue
+    if (line.isSidechain && !sidechain) continue
     const content = line.message?.content
     if (line.type === 'assistant' && Array.isArray(content)) {
       for (let j = content.length - 1; j >= 0; j -= 1) {
@@ -127,11 +157,48 @@ export function activityFromTranscript(text: string): string | null {
   return prompt
 }
 
-const BUSY = new Set(['busy', 'running', 'working', 'waiting'])
+/** Whether an item belongs in the pane: running, or its prompt cache still warm. */
+export function isShown(item: { active: boolean; lastAt: number }, now: number, ttlMs: number): boolean {
+  return item.active || now - item.lastAt < ttlMs
+}
 
-export const isBusy = (status: string) => BUSY.has(status)
+/** Keeps what is active or warm: a session shows when it or any of its agents does. */
+export function visible(sessions: readonly SessionView[], now: number, ttlMs: number): SessionView[] {
+  return sessions
+    .map(session => ({ ...session, agents: session.agents.filter(agent => isShown(agent, now, ttlMs)) }))
+    .filter(session => isShown(session, now, ttlMs) || session.agents.length > 0)
+    .sort((a, b) => rank(b) - rank(a) || b.lastAt - a.lastAt)
+}
 
-/** Busy sessions first, then by most recent status change. */
-export function sortSessions(rows: readonly SessionRow[]): SessionRow[] {
-  return [...rows].sort((a, b) => Number(isBusy(b.status)) - Number(isBusy(a.status)) || b.since - a.since)
+const rank = (session: SessionView) => (session.active || session.agents.some(agent => agent.active) ? 1 : 0)
+
+/** Orders agents as a tree: each parent followed by its children, active first. */
+export function ordered(agents: readonly AgentView[]): { agent: AgentView; depth: number }[] {
+  const ids = new Set(agents.map(agent => agent.id))
+  const children = new Map<string | null, AgentView[]>()
+  for (const agent of agents) {
+    const parent = agent.parentId && ids.has(agent.parentId) ? agent.parentId : null
+    children.set(parent, [...(children.get(parent) ?? []), agent])
+  }
+  const out: { agent: AgentView; depth: number }[] = []
+  const walk = (parent: string | null, depth: number) => {
+    const level = [...(children.get(parent) ?? [])].sort((a, b) => Number(b.active) - Number(a.active) || b.lastAt - a.lastAt)
+    for (const agent of level) {
+      out.push({ agent, depth })
+      walk(agent.id, depth + 1)
+    }
+  }
+  walk(null, 0)
+  return out
+}
+
+/** The argv that hands a URL to the OS, by platform. */
+export function openUrlArgv(url: string, isWindows: boolean, isMac: boolean): string[] {
+  if (isWindows) return ['rundll32', 'url.dll,FileProtocolHandler', url]
+  return [isMac ? 'open' : 'xdg-open', url]
+}
+
+/** The desktop app's link that brings one of its sessions to the front. */
+export function desktopLink(hostSessionId: string): string {
+  return `claude://code/continue?session=${encodeURIComponent(hostSessionId)}&source=desktop_action`
 }

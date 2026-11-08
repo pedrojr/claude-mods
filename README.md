@@ -7,7 +7,7 @@ A collection of mods (plugins) for Claude Code. Each mod lives in its own folder
 | Mod | What it does |
 | --- | --- |
 | [usage-bar](plugins/usage-bar) | One-line usage meter above the prompt: current session and this week, with percent, bar and reset time, plus a prompt-cache countdown. |
-| [agents-panel](plugins/agents-panel) | Side pane that gathers every open session on the machine (desktop, terminal, VS Code) and this session's agents and subagents, each with a short line on what it is doing now; click an agent to view its transcript. Opens by itself in the desktop app; `/agents-panel` or the chip above the prompt opens it anywhere. |
+| [agents-panel](plugins/agents-panel) | Side pane with the sessions, agents and subagents on the machine (desktop, terminal, VS Code) that are active or still have a warm prompt cache, each with a line on what it did last; green dot while active. Clicking a title opens that session or agent. Opens by itself in the desktop app; `/agents-panel` or the chip above the prompt opens it anywhere. |
 
 ## Install
 

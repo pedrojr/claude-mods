@@ -1,43 +1,41 @@
-/** Mirrors the engine's AgentStatus; the contract cannot import it. */
-export type AgentStatus = 'pending' | 'running' | 'waiting' | 'idle' | 'completed' | 'failed' | 'killed'
-
-/** One agent as the pane draws it: what `$.agent.list()` said, plus timing. */
-export type AgentRow = {
+/** One agent or subagent as the pane draws it. */
+export type AgentView = {
+  /** The agent id: the suffix of `subagents/agent-<id>.jsonl`, and `$.agent.list()`'s id. */
   id: string
   label: string
   type: string
-  status: AgentStatus
+  /** True while it runs. */
+  active: boolean
+  /** Epoch ms of its transcript's last write. */
+  lastAt: number
+  /** Its last tool call, reply or prompt; null when unknown. */
+  lastLine: string | null
+  /** The agent that spawned it, when known (this session's agents only). */
   parentId: string | null
-  /** `$.clock.now()` when the pane first saw it. */
-  firstSeenAt: number
-  /** `$.clock.now()` when it was first seen in a final status; null while it runs. */
-  endedAt: number | null
 }
 
-/** One open Claude Code session on this machine, from `<config>/sessions/<pid>.json`. */
-export type SessionRow = {
+/** One Claude Code session on this machine, with its agents. */
+export type SessionView = {
   sessionId: string
-  pid: number
-  /** The session's title (the desktop app's, or one derived from the folder). */
+  /** The desktop app's id (`local_<uuid>`), which its deep link opens; null outside the app. */
+  hostSessionId: string | null
   name: string
   cwd: string
-  /** `busy` while a turn runs, `idle` otherwise; other words pass through. */
-  status: string
   /** Where it runs: `desktop`, `CLI`, `VS Code`, ... */
   entrypoint: string
-  /** Epoch ms of its last status change. */
-  since: number
-  /** Its last tool call or reply, from its transcript; null when unknown. */
-  activity: string | null
   /** True for the session this pane is drawn in. */
   isSelf: boolean
+  /** True while a turn runs. */
+  active: boolean
+  lastAt: number
+  lastLine: string | null
+  agents: AgentView[]
 }
 
 export type Snapshot = {
-  agents: AgentRow[]
-  /** Every open session on this machine, this one included. */
-  sessions: SessionRow[]
-  /** `$.clock.now()` at the last refresh; elapsed times are drawn against it. */
+  /** Sessions with something active or a prompt cache still warm, busiest first. */
+  sessions: SessionView[]
+  /** `$.clock.now()` at the last refresh. */
   now: number
 }
 

@@ -1,7 +1,7 @@
 {
   "name": "agents-panel",
-  "version": "0.3.0",
-  "description": "Side pane listing every open Claude Code session on this machine and this session's agents, each with what it is doing now.",
+  "version": "0.4.0",
+  "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it.",
   "license": "MIT",
   "types": "./types/index.d.ts"
 }

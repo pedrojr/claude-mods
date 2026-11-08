@@ -11,7 +11,7 @@
     {
       "name": "agents-panel",
       "source": "./plugins/agents-panel",
-      "description": "Side pane listing every open Claude Code session on this machine and this session's agents, each with what it is doing now."
+      "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it."
     }
   ]
 }
