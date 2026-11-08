@@ -20,8 +20,15 @@ export type Snapshot = {
   now: number
 }
 
+export type PaneState = {
+  /** True while the pane is drawn on a surface. */
+  isOpen: boolean
+  /** True once the person closed it; it then opens only when they ask. */
+  closedByPerson: boolean
+}
+
 declare module 'claude-code' {
   interface PluginState {
-    'agents-panel': { snapshot: Shaped<Snapshot> }
+    'agents-panel': { snapshot: Shaped<Snapshot>; pane: PaneState }
   }
 }

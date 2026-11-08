@@ -19,18 +19,25 @@ A side pane for Claude Code that lists the agents and subagents of the current s
 
 ## Where it shows
 
-- **Desktop app (and other app surfaces):** the pane opens by itself at session start and whenever an agent is spawned.
-- **Terminal:** the pane opens only when you ask, with `/agents-panel`, because the CLI already has its own tasks list. With the transcript in fullscreen mode it docks on the right; otherwise it sits above the prompt. Close it with `ctrl+x x`.
+The mod shows only in sessions that load it, so install it first (below). Plugins cannot add an icon or a menu item to the app, so the mod gives three ways in:
+
+- **Desktop app (and other app surfaces):** the pane opens by itself at session start and whenever an agent is spawned, as a column on the right.
+- **Terminal:** the pane opens only when you ask, because the CLI already has its own tasks list. With the transcript in fullscreen mode it docks on the right; otherwise it sits above the prompt.
+- **`/agents-panel`**, on either surface, opens it. It runs mid-turn, while agents are working.
+- **`● 2 agents running [Agents]`**: while the pane is closed and the session has agents, this one-line chip sits above the prompt; its button opens the pane.
+
+Once you close the pane (its close mark, or `ctrl+x x` in the terminal), it stops opening by itself for the rest of that session. The chip and the command still bring it back.
 
 ## Install
 
-At the prompt of a Claude Code terminal session (replace `<owner>` with the GitHub account that holds the repository):
+From a shell (user scope, so it loads in every session, desktop app included):
 
-```
-/plugin install agents-panel --marketplace <owner>/claude-mods
+```bash
+claude plugin marketplace add pedrojr/claude-mods
+claude plugin install agents-panel@claude-mods --scope user
 ```
 
-See the [repository README](../../README.md) for the shell and desktop app install steps.
+Sessions already open do not pick it up: start a new one. See the [repository README](../../README.md) for the terminal prompt and desktop app install steps.
 
 ## Settings
 

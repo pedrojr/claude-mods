@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentInfo, AgentStatus, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { AgentRow, Snapshot } from '../types'
+import type { AgentRow, PaneState, Snapshot } from '../types'
 
 const PANE = 'agents-panel'
 const TITLE = 'Agents'
@@ -18,6 +18,9 @@ const DOCK_COLUMNS = 44
 const snapshot = atom({ plugin: 'agents-panel', key: 'snapshot' } as const, { agents: [], now: 0 } as Snapshot, {
   shape: 'snapshot-1',
 })
+
+// Whether the pane is drawn, and whether the person closed it (then it stops opening by itself).
+const pane = atom({ plugin: 'agents-panel', key: 'pane' } as const, { isOpen: false, closedByPerson: false } as PaneState)
 
 const FINAL: ReadonlySet<AgentStatus> = new Set(['completed', 'failed', 'killed'])
 
@@ -128,12 +131,22 @@ async function refresh($: Engine): Promise<void> {
   }
 }
 
+/** Opens the pane; `asked` is true when the person's own command or press asks for it. */
+async function openPane($: Engine, asked: boolean): Promise<string> {
+  const opened = await $.ui.open({ id: PANE, title: TITLE, columns: DOCK_COLUMNS, ...(asked ? { focus: true } : {}) })
+  await update($, pane, state => ({
+    isOpen: opened.isPlaced,
+    closedByPerson: asked ? false : state.closedByPerson,
+  }))
+  return opened.isPlaced ? 'Agents pane opened.' : `Agents pane waits: ${opened.reason}`
+}
+
 async function openIfApp($: Engine): Promise<void> {
+  // Once the person closed the pane it stays closed; the band's button or /agents-panel brings it back.
+  if ((await read($, pane)).closedByPerson) return
   const surfaces = await $.session.surfaces()
   // The terminal opens the pane only on request (/agents-panel); app surfaces open it themselves.
-  if (surfaces.some(s => s !== 'terminal')) {
-    await $.ui.open({ id: PANE, title: TITLE, columns: DOCK_COLUMNS })
-  }
+  if (surfaces.some(s => s !== 'terminal')) await openPane($, false)
 }
 
 async function show($: Engine, agentId?: string): Promise<void> {
@@ -146,9 +159,12 @@ export const register: Register = on => {
     await $.command.register({
       name: COMMAND,
       description: 'Show running agents and subagents; pick one to view its transcript',
+      // Runs mid-turn: agents run while the main turn waits on them.
+      immediate: true,
     })
     const result = await next(e)
-    refresh($).catch(ignore)
+    // A resumed session already lists its agents: load them before the first prompt.
+    await refresh($).catch(ignore)
     openIfApp($).catch(ignore)
     return result
   })
@@ -162,11 +178,40 @@ export const register: Register = on => {
   on('command.run', { command: COMMAND }, async $ => {
     refresh($).catch(ignore)
     try {
-      const opened = await $.ui.open({ id: PANE, title: TITLE, focus: true, columns: DOCK_COLUMNS })
-      return { text: opened.isPlaced ? 'Agents pane opened.' : `Agents pane waits: ${opened.reason}` }
+      return { text: await openPane($, true) }
     } catch (error) {
       return { text: `Agents pane could not open: ${String(error)}` }
     }
+  })
+
+  on('ui.close', async ($, e, next) => {
+    const result = await next(e)
+    if (e.id === PANE) {
+      await update($, pane, state => ({
+        isOpen: false,
+        closedByPerson: state.closedByPerson || e.origin.kind === 'person',
+      })).catch(ignore)
+    }
+    return result
+  })
+
+  // The way back to a closed pane: a one-line chip above the prompt while the session has agents.
+  on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
+    if (e.props.hasSurvey || (await read($, pane)).isOpen) return next(e)
+    const { agents } = await read($, snapshot)
+    if (agents.length === 0) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const active = agents.filter(row => isActive(row.status)).length
+    return (
+      <Box flexDirection="row">
+        <Text color={active > 0 ? 'success' : 'subtle'}>{active > 0 ? '●' : '✓'}</Text>
+        <Text dimColor>
+          {' '}
+          {active > 0 ? `${active} agent${active === 1 ? '' : 's'} running` : `${agents.length} agent${agents.length === 1 ? '' : 's'} done`}{' '}
+        </Text>
+        <Button key="open-agents" label="Agents" onPress={() => openPane($, true).catch(ignore)} />
+      </Box>
+    )
   })
 
   on('agent.spawn', async ($, e, next) => {
