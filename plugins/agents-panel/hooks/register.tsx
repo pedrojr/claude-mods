@@ -181,7 +181,12 @@ async function readSessions($: Engine, now: number): Promise<SessionView[]> {
   )
 }
 
+// Past this many entries a cache is emptied; the next poll re-reads only what it draws.
+const MAX_CACHED = 500
+
 async function refresh($: Engine): Promise<void> {
+  if (lineCache.size > MAX_CACHED) lineCache.clear()
+  if (metaCache.size > MAX_CACHED) metaCache.clear()
   const now = await $.clock.now()
   const sessions = await readSessions($, now).catch(() => [] as SessionView[])
   const current = await read($, snapshot)
@@ -225,8 +230,11 @@ async function openSession($: Engine, session: SessionView): Promise<void> {
   }
   const found = await findHost($)
   if (session.hostSessionId && found) {
-    const result = await $.process.run(openUrlArgv(desktopLink(session.hostSessionId), found.isWindows, found.isMac))
-    if (result.exitCode === 0) return
+    // A launcher that cannot run falls through to the toast below.
+    const result = await $.process
+      .run(openUrlArgv(desktopLink(session.hostSessionId), found.isWindows, found.isMac))
+      .catch(() => null)
+    if (result?.exitCode === 0) return
   }
   await $.ui.toast(`"${session.name}" runs in ${session.entrypoint} (${folderOf(session.cwd)}); switch to it there.`)
 }
