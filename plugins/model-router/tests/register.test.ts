@@ -6,10 +6,10 @@ type Sent = { model: string; effort: unknown }
 const USAGE = { input_tokens: 10, output_tokens: 5, cache_creation_input_tokens: 0, cache_read_input_tokens: 0 }
 
 /** The engine beneath the plugin: answers what the mod calls, records each request it sends. */
-function engine(on: On, classifierReply: string) {
+function engine(on: On, classifierReply: string | Error, stored: Record<string, unknown> = {}) {
   const sent: Sent[] = []
   const calls = { classifier: 0 }
-  mock.store(on)
+  mock.store(on, stored)
   mock.clock(on, { now: 1_000 })
   on('command.register', () => ({ value: { command: 'route' } }))
   on('session.id', () => ({ value: 'session-1' }))
@@ -21,6 +21,7 @@ function engine(on: On, classifierReply: string) {
   })
   on('model.complete', () => {
     calls.classifier += 1
+    if (classifierReply instanceof Error) throw classifierReply
     return { value: { isAnswered: true, text: classifierReply, usage: USAGE } }
   })
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -94,6 +95,37 @@ test('an unreadable classifier reply falls back to sonnet/medium', async ($, on)
   await submit($, 'Add pagination to the orders endpoint and update the tests')
   await step($)
   expect(sent[0]).toEqual({ model: 'sonnet', effort: 'medium' })
+})
+
+test('a classifier the engine refuses to call falls back to sonnet/medium', async ($, on) => {
+  const { sent } = engine(on, new Error('model haiku is not in availableModels'))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+
+  await submit($, 'Add pagination to the orders endpoint and update the tests')
+  await step($)
+  expect(sent[0]).toEqual({ model: 'sonnet', effort: 'medium' })
+})
+
+test('a resumed session keeps its route even when launched on another model', async ($, on) => {
+  const saved = {
+    model: 'opus',
+    effort: 'high',
+    difficulty: 'critical',
+    contextTokens: 0,
+    source: 'classifier',
+    reason: 'migration',
+    mode: 'auto',
+    baseModel: 'claude-opus-5-5',
+    baseEffort: 'medium',
+    lockedAt: 1_000,
+  }
+  const { sent, calls } = engine(on, '{"difficulty":"simple"}', { 'route:session-1': saved })
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+
+  await submit($, 'keep going')
+  await step($, 'claude-sonnet-5-5', 'medium')
+  expect(calls.classifier).toBe(0)
+  expect(sent[0]).toEqual({ model: 'opus', effort: 'high' })
 })
 
 test('/route sets, shows and turns off the route', async ($, on) => {

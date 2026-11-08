@@ -59,14 +59,20 @@ async function classify($: EngineInterface, kind: 'session' | 'subagent', text: 
   const quick = quickRules(text)
   if (quick !== null) return verdict(quick, contextTokens, 'rules', 'short command or question')
 
-  const reply = await $.model.complete({
-    model: CLASSIFIER_MODEL,
-    system: CLASSIFIER_SYSTEM,
-    prompt: classifierPrompt(kind, text, contextTokens),
-    maxTokens: 100,
-    effort: 'low',
-    timeoutMs: CLASSIFIER_TIMEOUT_MS,
-  })
+  let reply: Awaited<ReturnType<EngineInterface['model']['complete']>>
+  try {
+    reply = await $.model.complete({
+      model: CLASSIFIER_MODEL,
+      system: CLASSIFIER_SYSTEM,
+      prompt: classifierPrompt(kind, text, contextTokens),
+      maxTokens: 100,
+      effort: 'low',
+      timeoutMs: CLASSIFIER_TIMEOUT_MS,
+    })
+  } catch {
+    // The engine refused to send it (the classifier model blocked by `availableModels`, say).
+    return verdict('standard', contextTokens, 'fallback', 'classifier unavailable')
+  }
   const parsed = reply.isAnswered ? parseVerdict(reply.text) : null
   if (parsed === null) {
     const why = reply.isAnswered ? 'classifier reply unreadable' : `classifier ${reply.reason}`
@@ -116,10 +122,13 @@ export const register: Register = on => {
     })
 
     const [id, now] = await Promise.all([$.session.id(), $.clock.now()])
-    // A resumed session keeps the route it was locked to.
+    // A resumed session keeps the route it was locked to. The base is taken
+    // again at its next request: this launch may start on another model.
     if ((await read($, route)) === null) {
       const saved = (await $.store.get(STORE_PREFIX + id)) as Route | undefined
-      if (saved && typeof saved === 'object' && 'mode' in saved) await update($, route, () => saved)
+      if (saved && typeof saved === 'object' && 'mode' in saved) {
+        await update($, route, () => ({ ...saved, baseModel: null, baseEffort: null }))
+      }
     }
     $.ui.status(statusText(await read($, route), false))
 
