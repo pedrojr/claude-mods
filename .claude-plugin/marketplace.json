@@ -11,7 +11,7 @@
     {
       "name": "agents-panel",
       "source": "./plugins/agents-panel",
-      "description": "Side pane listing the session's running agents and subagents; click one to jump to its transcript."
+      "description": "Side pane listing every open Claude Code session on this machine and this session's agents, each with what it is doing now."
     }
   ]
 }

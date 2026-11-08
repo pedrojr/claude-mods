@@ -1,23 +1,30 @@
 import { atom, read, update } from 'claude-code'
 import type { AgentInfo, AgentStatus, EngineInterface as Engine, Register } from 'claude-code'
 
-import type { AgentRow, PaneState, Snapshot } from '../types'
+import type { AgentRow, PaneState, SessionRow, Snapshot } from '../types'
+import { activityFromTranscript, folderOf, isBusy, parseRegistry, projectSlug, sortSessions } from './sessions'
 
 const PANE = 'agents-panel'
 const TITLE = 'Agents'
 const COMMAND = 'agents-panel'
-// How often the list is polled while any agent is still working.
-const POLL_MS = 1500
+// How often sessions and agents are polled.
+const POLL_MS = 3000
 // Finished agents kept below the active ones.
 const MAX_FINISHED = 15
+// Idle sessions listed below the busy ones.
+const MAX_IDLE_SESSIONS = 12
+// Transcripts larger than this are not read for the activity line.
+const MAX_TRANSCRIPT_BYTES = 40 * 1024 * 1024
 // Columns the docked pane asks for in a fullscreen terminal.
-const DOCK_COLUMNS = 44
+const DOCK_COLUMNS = 52
 
-// Change the tag when AgentRow's fields change: it drops what an earlier
+// Change the tag when Snapshot's fields change: it drops what an earlier
 // version stored, which outlives a reload.
-const snapshot = atom({ plugin: 'agents-panel', key: 'snapshot' } as const, { agents: [], now: 0 } as Snapshot, {
-  shape: 'snapshot-1',
-})
+const snapshot = atom(
+  { plugin: 'agents-panel', key: 'snapshot' } as const,
+  { agents: [], sessions: [], now: 0 } as Snapshot,
+  { shape: 'snapshot-2' },
+)
 
 // Whether the pane is drawn, and whether the person closed it (then it stops opening by itself).
 const pane = atom({ plugin: 'agents-panel', key: 'pane' } as const, { isOpen: false, closedByPerson: false } as PaneState)
@@ -115,20 +122,82 @@ const ignore = (): void => {}
 // The poll timer; a reload drops it with the module, and the next refresh starts it again.
 let poller: { cancel: () => void } | null = null
 
+// Claude Code's config folder, found once.
+let configDir: string | null = null
+
+// Each transcript's activity line, re-read only when the file changes.
+const activityCache = new Map<string, { mtimeMs: number; activity: string | null }>()
+
+async function findConfigDir($: Engine): Promise<string | null> {
+  if (configDir) return configDir
+  const explicit = await $.env.get('CLAUDE_CONFIG_DIR')
+  const home = (await $.env.get('HOME')) ?? (await $.env.get('USERPROFILE'))
+  configDir = explicit ?? (home ? `${home.replace(/[\\/]+$/, '')}/.claude` : null)
+  return configDir
+}
+
+async function activityOf($: Engine, dir: string, row: Omit<SessionRow, 'activity' | 'isSelf'>): Promise<string | null> {
+  const path = `${dir}/projects/${projectSlug(row.cwd)}/${row.sessionId}.jsonl`
+  try {
+    const stat = await $.fs.stat(path)
+    const cached = activityCache.get(row.sessionId)
+    if (cached && cached.mtimeMs === stat.mtimeMs) return cached.activity
+    const activity = stat.size > MAX_TRANSCRIPT_BYTES ? null : activityFromTranscript(await $.fs.read(path))
+    activityCache.set(row.sessionId, { mtimeMs: stat.mtimeMs, activity })
+    return activity
+  } catch {
+    return activityCache.get(row.sessionId)?.activity ?? null
+  }
+}
+
+/** Every open session on this machine, from Claude Code's session registry. */
+async function readSessions($: Engine): Promise<SessionRow[]> {
+  const dir = await findConfigDir($)
+  if (!dir) return []
+  const selfId = await $.session.id()
+  let entries: readonly { name: string; kind: string }[]
+  try {
+    entries = await $.fs.list(`${dir}/sessions`)
+  } catch {
+    return []
+  }
+  const rows = await Promise.all(
+    entries
+      .filter(entry => entry.kind === 'file' && entry.name.endsWith('.json'))
+      .map(async entry => {
+        try {
+          const row = parseRegistry(await $.fs.read(`${dir}/sessions/${entry.name}`))
+          if (!row) return null
+          return { ...row, activity: await activityOf($, dir, row), isSelf: row.sessionId === selfId }
+        } catch {
+          return null
+        }
+      }),
+  )
+  const sorted = sortSessions(rows.filter((row): row is SessionRow => row !== null))
+  const busy = sorted.filter(row => isBusy(row.status) || row.isSelf)
+  const idle = sorted.filter(row => !isBusy(row.status) && !row.isSelf).slice(0, MAX_IDLE_SESSIONS)
+  return sortSessions([...busy, ...idle])
+}
+
 async function refresh($: Engine): Promise<void> {
-  const [list, now] = await Promise.all([$.agent.list(), $.clock.now()])
+  // The session list is a bonus: where it cannot be read, agents still show.
+  const [list, now, sessions] = await Promise.all([$.agent.list(), $.clock.now(), readSessions($).catch(() => [])])
   const current = await read($, snapshot)
   const agents = merge(current.agents, list, now)
-  const anyActive = agents.some(row => isActive(row.status))
-  const same = JSON.stringify(agents) === JSON.stringify(current.agents)
+  const ticking = agents.some(row => isActive(row.status)) || sessions.some(row => isBusy(row.status))
+  const same =
+    JSON.stringify(agents) === JSON.stringify(current.agents) &&
+    JSON.stringify(sessions) === JSON.stringify(current.sessions)
   // Redraw on any change, and every poll while something runs (the clocks tick).
-  if (!same || anyActive) await update($, snapshot, () => ({ agents, now }))
-  if (anyActive && !poller) {
-    poller = $.clock.every(POLL_MS, () => refresh($).catch(ignore))
-  } else if (!anyActive && poller) {
-    poller.cancel()
-    poller = null
-  }
+  if (!same || ticking) await update($, snapshot, () => ({ agents, sessions, now }))
+  if (!poller) poller = $.clock.every(POLL_MS, () => refresh($).catch(ignore))
+}
+
+async function openSession($: Engine, row: SessionRow, surface: Parameters<Engine['ui']['copy']>[0]['surface']): Promise<void> {
+  if (row.isSelf) return show($)
+  await $.ui.copy({ text: row.sessionId, ...(surface ? { surface } : {}) }).catch(ignore)
+  await $.ui.toast(`"${row.name}" runs in ${row.entrypoint} (${folderOf(row.cwd)}); its session id is copied.`)
 }
 
 /** Opens the pane; `asked` is true when the person's own command or press asks for it. */
@@ -158,7 +227,7 @@ export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: 'Show running agents and subagents; pick one to view its transcript',
+      description: 'Show open sessions, running agents and subagents, and what each is doing',
       // Runs mid-turn: agents run while the main turn waits on them.
       immediate: true,
     })
@@ -195,20 +264,24 @@ export const register: Register = on => {
     return result
   })
 
-  // The way back to a closed pane: a one-line chip above the prompt while the session has agents.
+  // The way back to a closed pane: a one-line chip above the prompt while there is something to show.
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
     if (e.props.hasSurvey || (await read($, pane)).isOpen) return next(e)
-    const { agents } = await read($, snapshot)
-    if (agents.length === 0) return next(e)
-    const { Box, Text, Button } = $.ui.resolve(e)
+    const { agents, sessions } = await read($, snapshot)
     const active = agents.filter(row => isActive(row.status)).length
+    const busy = sessions.filter(row => !row.isSelf && isBusy(row.status)).length
+    if (agents.length === 0 && busy === 0) return next(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
+    const parts = [
+      busy > 0 ? `${busy} other session${busy === 1 ? '' : 's'} busy` : null,
+      active > 0 ? `${active} agent${active === 1 ? '' : 's'} running` : null,
+      active === 0 && agents.length > 0 ? `${agents.length} agent${agents.length === 1 ? '' : 's'} done` : null,
+    ].filter(Boolean)
+    const working = busy + active > 0
     return (
       <Box flexDirection="row">
-        <Text color={active > 0 ? 'success' : 'subtle'}>{active > 0 ? '●' : '✓'}</Text>
-        <Text dimColor>
-          {' '}
-          {active > 0 ? `${active} agent${active === 1 ? '' : 's'} running` : `${agents.length} agent${agents.length === 1 ? '' : 's'} done`}{' '}
-        </Text>
+        <Text color={working ? 'success' : 'subtle'}>{working ? '●' : '✓'}</Text>
+        <Text dimColor> {parts.join(' · ')} </Text>
         <Button key="open-agents" label="Agents" onPress={() => openPane($, true).catch(ignore)} />
       </Box>
     )
@@ -229,16 +302,52 @@ export const register: Register = on => {
 
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
-    const { agents, now } = await read($, snapshot)
+    const { agents, sessions, now } = await read($, snapshot)
     const viewing = e.props.view.agentId
     const rows = ordered(agents)
+    const busy = sessions.filter(row => isBusy(row.status)).length
     const active = agents.filter(row => isActive(row.status)).length
+    // Without a registry entry for this session (an SDK host), it still heads its agents.
+    const self: SessionRow =
+      sessions.find(row => row.isSelf) ??
+      { sessionId: '', pid: 0, name: 'This session', cwd: '', status: 'busy', entrypoint: '', since: now, activity: null, isSelf: true }
+    const others = sessions.filter(row => !row.isSelf)
+
+    const sessionRow = (row: SessionRow) => {
+      const working = isBusy(row.status)
+      const meta = [row.isSelf ? 'this session' : row.entrypoint, folderOf(row.cwd), row.since ? `${working ? '' : 'idle '}${elapsed(now - row.since)}` : '']
+        .filter(Boolean)
+        .join(' · ')
+      return (
+        <Box key={`session:${row.sessionId || 'self'}`} flexDirection="column" marginTop={1}>
+          <Button
+            key={`session-btn:${row.sessionId || 'self'}`}
+            plain
+            dimColor={!working && !row.isSelf}
+            onPress={press => openSession($, row, press.surface).catch(ignore)}
+          >
+            <Text color={working ? 'success' : 'subtle'}>{working ? '●' : '○'}</Text>{' '}
+            <Text weight={row.isSelf && !viewing ? 'bold' : 'regular'} wrap="truncate-end">
+              {row.name}
+            </Text>
+          </Button>
+          <Box paddingLeft={2} flexDirection="column">
+            <Text dimColor wrap="truncate-end">{meta}</Text>
+            {row.activity && (
+              <Text dimColor={!working} wrap="truncate-end">
+                ↳ {row.activity}
+              </Text>
+            )}
+          </Box>
+        </Box>
+      )
+    }
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" justifyContent="space-between">
           <Text dimColor>
-            {active} running · {agents.length - active} done
+            {busy} busy · {sessions.length - busy} idle · {active} agent{active === 1 ? '' : 's'}
           </Text>
           {viewing && (
             <Button key="main" plain hotkey="m" onPress={() => show($).catch(ignore)}>
@@ -246,13 +355,13 @@ export const register: Register = on => {
             </Button>
           )}
         </Box>
-        {rows.length === 0 && <Text dimColor>No agents in this session yet.</Text>}
+        {sessionRow(self)}
         {rows.map(({ row, depth }, index) => {
           const { mark, color } = glyph(row.status)
           const time = elapsed((row.endedAt ?? now) - row.firstSeenAt)
           const isViewed = row.id === viewing
           return (
-            <Box key={row.id} flexDirection="row" paddingLeft={depth * 2}>
+            <Box key={row.id} flexDirection="row" paddingLeft={2 + depth * 2}>
               <Button
                 key={`agent:${row.id}`}
                 plain
@@ -268,6 +377,7 @@ export const register: Register = on => {
             </Box>
           )
         })}
+        {others.map(sessionRow)}
       </Box>
     )
   })

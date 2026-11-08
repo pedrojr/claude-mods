@@ -14,8 +14,29 @@ export type AgentRow = {
   endedAt: number | null
 }
 
+/** One open Claude Code session on this machine, from `<config>/sessions/<pid>.json`. */
+export type SessionRow = {
+  sessionId: string
+  pid: number
+  /** The session's title (the desktop app's, or one derived from the folder). */
+  name: string
+  cwd: string
+  /** `busy` while a turn runs, `idle` otherwise; other words pass through. */
+  status: string
+  /** Where it runs: `desktop`, `CLI`, `VS Code`, ... */
+  entrypoint: string
+  /** Epoch ms of its last status change. */
+  since: number
+  /** Its last tool call or reply, from its transcript; null when unknown. */
+  activity: string | null
+  /** True for the session this pane is drawn in. */
+  isSelf: boolean
+}
+
 export type Snapshot = {
   agents: AgentRow[]
+  /** Every open session on this machine, this one included. */
+  sessions: SessionRow[]
   /** `$.clock.now()` at the last refresh; elapsed times are drawn against it. */
   now: number
 }
