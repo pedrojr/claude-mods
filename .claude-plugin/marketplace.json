@@ -12,6 +12,11 @@
       "name": "agents-panel",
       "source": "./plugins/agents-panel",
       "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it."
+    },
+    {
+      "name": "usage-report",
+      "source": "./plugins/usage-report",
+      "description": "Today's usage across every session on the machine: tokens, models, effort, tool calls ok and failed, retries, API errors, sessions and subagents. Open it with /report."
     }
   ]
 }

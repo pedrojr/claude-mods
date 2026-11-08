@@ -1,0 +1,7 @@
+{
+  "name": "usage-report",
+  "version": "0.1.0",
+  "description": "Today's usage across every session on the machine: tokens, models, effort, tool calls ok and failed, retries, API errors, sessions and subagents. Open it with /report.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
