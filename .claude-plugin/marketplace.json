@@ -17,6 +17,11 @@
       "name": "usage-report",
       "source": "./plugins/usage-report",
       "description": "Today's usage across every session on the machine: tokens, models, effort, tool calls ok and failed, retries, API errors, sessions and subagents. Open it with /report."
+    },
+    {
+      "name": "model-router",
+      "source": "./plugins/model-router",
+      "description": "Picks the model and effort from the first prompt of a session and keeps them for the whole session; gives each subagent its own model and effort by the difficulty of its part."
     }
   ]
 }
