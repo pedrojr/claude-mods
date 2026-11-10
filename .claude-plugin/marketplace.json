@@ -16,14 +16,9 @@
       "description": "Compact one-line usage: session and week with percent, bar and time to reset, context fill, session cost and a prompt-cache countdown."
     },
     {
-      "name": "agents-panel",
-      "source": "./plugins/agents-panel",
-      "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it in the desktop app or VS Code."
-    },
-    {
-      "name": "changed-files",
-      "source": "./plugins/changed-files",
-      "description": "Side pane with the repository's changed files, grouped as VS Code groups them (merge, staged, changes); click a file to see its diff below the list."
+      "name": "workspace",
+      "source": "./plugins/workspace",
+      "description": "One side pane for the session's work: the running agents and sessions on top, the repository's changed files below, and the diff of the file you click at the bottom."
     },
     {
       "name": "usage-report",

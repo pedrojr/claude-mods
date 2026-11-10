@@ -4,11 +4,11 @@ import { diffArgv, MAX_CHARS, parseDiff } from '../hooks/diff'
 import { parseStatus } from '../hooks/git'
 
 const PANE = {
-  plugin: 'changed-files',
+  plugin: 'workspace',
   component: 'Pane',
-  requestId: 'changed-files',
+  requestId: 'workspace',
   props: {
-    title: 'Changes',
+    title: 'Workspace',
     isFocused: false,
     bodyColumns: 50,
     placement: 'dock',
@@ -81,8 +81,11 @@ test('diffArgv picks the side', () => {
 
 test('the pane lists the files, and a click shows the diff below', async ($, on) => {
   const runs: { argv: string[]; cwd: string | undefined }[] = []
-  on('command.register', () => ({ value: { command: 'changes' } }))
+  on('command.register', () => ({ value: { command: 'workspace' } }))
   on('session.surfaces', () => ({ value: ['terminal'] }))
+  // No config folder: the Agents section reads no sessions.
+  on('env.get', () => ({ value: undefined }))
+  on('clock.now', () => ({ value: 1 }))
   on('session.cwd', () => ({ value: 'D:/work' }))
   on('session.start', (_, e) => ({ cwd: e.cwd }))
   on('ui.open', () => ({ value: { isPlaced: true } }))
@@ -97,14 +100,15 @@ test('the pane lists the files, and a click shows the diff below', async ($, on)
 
   await $.session.start({ cwd: 'D:/work', surface: 'terminal', isInteractive: true })
   await $.command.run({
-    command: 'changes',
+    command: 'workspace',
     args: '',
     origin: { kind: 'composer' },
     presentation: { isFullscreen: false, columns: 120 },
   })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect((await ui.find({ type: 'Text', text: /^Staged Changes/ }))?.text).toContain('2')
+  expect((await ui.find({ type: 'Text', text: /^Staged/ }))?.text).toBe('Staged · 2')
+  expect(await ui.find({ type: 'Text', text: /Click a file in Changes/ })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: /old\.ts → new\.ts/ })).toBeTruthy()
   expect(await ui.find({ type: 'Code' })).toBeFalsy()
 
@@ -115,6 +119,8 @@ test('the pane lists the files, and a click shows the diff below', async ($, on)
   expect(diffRun?.argv.slice(-3)).toEqual(['--', '/dev/null', 'notes/todo.md'])
   expect(await ui.find({ type: 'Code' })).toBeTruthy()
   expect(await ui.find({ type: 'Text', text: '+2' })).toBeTruthy()
+
+  expect((await ui.find({ type: 'Text', text: 'todo.md' }))?.text).toBe('todo.md')
 
   // A second click on the same file hides it.
   await ui.press({ key: 'open:untracked:notes/todo.md' })

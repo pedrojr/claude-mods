@@ -89,7 +89,7 @@ export function splitPath(path: string): { name: string; dir: string } {
 }
 
 /** The theme color VS Code gives each letter. */
-export function statusColor(status: Status, untracked: boolean): string {
+export function statusColor(status: Status, untracked = false): string {
   if (untracked || status === 'A' || status === 'U') return 'success'
   if (status === 'D' || status === '!') return 'error'
   if (status === 'R' || status === 'C') return 'suggestion'
