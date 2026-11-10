@@ -60,7 +60,7 @@ See the [repository README](../../README.md) for the terminal prompt and desktop
 
 - The rating call costs one small Haiku request, on the first prompt only. Short commands skip it.
 - If the rating fails or times out (8 seconds), the session runs on sonnet / medium.
-- `/model` and the built-in status line still show the session's own model. The `route` entry shows the model and effort the requests are sent with.
+- `/model`, the built-in status line and the model picker under the prompt (desktop app, VS Code) still show the session's own model and effort. Claude Code gives mods no way to change them: the mod rewrites each request instead. The `route` entry shows the model and effort the requests are sent with.
 - Setting `CLAUDE_CODE_EFFORT_LEVEL` caps the effort the mod can ask for.
 - To change the tiers or the 100k threshold, edit `pick()` and `LARGE_CONTEXT_TOKENS` in `hooks/route.ts`.
 - On a set of 12 labeled prompts (Portuguese, from shell commands to a zero-downtime migration), Haiku with the rubric in `CLASSIFIER_SYSTEM` rated 11 as labeled. The one miss was a list of review items that included a bug with an unknown cause, rated hard instead of standard.
