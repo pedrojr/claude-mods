@@ -1,12 +1,14 @@
 import { atom, read, update } from 'claude-code'
-import type { Register, SessionRateLimit } from 'claude-code'
+import type { EngineInterface as Engine, Register, SessionRateLimit } from 'claude-code'
 
-import type { Cache, Lang, Window, Windows } from '../types'
+import type { Cache, Lang, Meter, Window, Windows } from '../types'
 
-const windows = atom({ plugin: 'usage-bar', key: 'windows' } as const, {
-  session: null,
-  week: null,
-} as Windows)
+// Change the tag when Windows' fields change: it drops what an earlier version stored.
+const windows = atom(
+  { plugin: 'usage-bar', key: 'windows' } as const,
+  { session: null, week: null, at: 0 } as Windows,
+  { shape: 'windows-2' },
+)
 
 const cache = atom({ plugin: 'usage-bar', key: 'cache' } as const, {
   lastResponseAt: null,
@@ -16,6 +18,26 @@ const cache = atom({ plugin: 'usage-bar', key: 'cache' } as const, {
 
 const lang = atom({ plugin: 'usage-bar', key: 'lang' } as const, 'en' as Lang)
 
+const meter = atom({ plugin: 'usage-bar', key: 'meter' } as const, {
+  contextTokens: null,
+  contextWindow: null,
+  costUsd: null,
+} as Meter)
+
+function meterOf(usage: { context: { tokens?: number; window?: number }; cost?: { usd: number } }): Meter {
+  return {
+    contextTokens: usage.context.tokens ?? null,
+    contextWindow: usage.context.window ?? null,
+    costUsd: usage.cost?.usd ?? null,
+  }
+}
+
+async function remeter($: Engine, usage: Parameters<typeof meterOf>[0]): Promise<void> {
+  const next = meterOf(usage)
+  const prev = await read($, meter)
+  if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, meter, () => next)
+}
+
 const BAR_WIDTH = 12
 // Prompt cache lifetime. Claude Code uses a 1-hour TTL on subscriptions and
 // 5 minutes on some API setups; the engine does not tell plugins which one.
@@ -24,11 +46,19 @@ const CHECK_EVERY_MS = 60 * 1000
 const STORE_PREFIX = 'cache:'
 const STORE_LANG = 'lang'
 const STORE_KEEP_MS = 30 * 24 * 60 * 60 * 1000
+// Every session on the machine writes its newest rate-limit reading here, so an
+// idle session's bar follows what the others spend.
+const SHARED_FILE = 'plugins/data/usage-bar/limits.json'
 
-const LABELS: Record<Lang, { session: string; week: string }> = {
-  en: { session: 'Session', week: 'Week' },
-  pt: { session: 'Sessão', week: 'Semana' },
-  es: { session: 'Sesión', week: 'Semana' },
+// The once-a-minute timer. A reload or a lost hooks worker drops it with the
+// module; every hook below starts it again when it is gone.
+let ticker: { cancel: () => void } | null = null
+let sharedPath: string | null | undefined
+
+const LABELS: Record<Lang, { session: string; week: string; context: string }> = {
+  en: { session: 'Session', week: 'Week', context: 'Context' },
+  pt: { session: 'Sessão', week: 'Semana', context: 'Contexto' },
+  es: { session: 'Sesión', week: 'Semana', context: 'Contexto' },
 }
 
 // Common short words of each language; the one with most hits wins.
@@ -52,17 +82,95 @@ function detectLang(text: string): Lang | null {
   return best === pt ? 'pt' : best === es ? 'es' : 'en'
 }
 
-function pick(rateLimits: readonly SessionRateLimit[]): Windows {
+function pick(rateLimits: readonly SessionRateLimit[], at: number): Windows {
   const find = (kind: string): Window | null => {
     const limit = rateLimits.find(r => r.kind === kind)
     return limit ? { percent: limit.percentUsed, resetsAt: limit.resetsAt ?? null } : null
   }
-  return { session: find('five_hour'), week: find('seven_day') }
+  return { session: find('five_hour'), week: find('seven_day'), at }
 }
 
-function bar(percent: number): { full: string; empty: string } {
-  const filled = Math.max(0, Math.min(BAR_WIDTH, Math.round((percent / 100) * BAR_WIDTH)))
-  return { full: '█'.repeat(filled), empty: '█'.repeat(BAR_WIDTH - filled) }
+/** A window whose reset time has passed starts over at 0%, before any new reading says so. */
+function current(w: Window | null, now: number): Window | null {
+  if (w === null || w.resetsAt === null) return w
+  const resets = Date.parse(w.resetsAt)
+  return Number.isFinite(resets) && now >= resets ? { percent: 0, resetsAt: null } : w
+}
+
+function parseShared(text: string): Windows | null {
+  try {
+    const v = JSON.parse(text) as Partial<Windows>
+    if (typeof v.at !== 'number') return null
+    const ok = (w: unknown): w is Window | null =>
+      w === null || (typeof w === 'object' && typeof (w as Window).percent === 'number')
+    if (!ok(v.session ?? null) || !ok(v.week ?? null)) return null
+    return { session: v.session ?? null, week: v.week ?? null, at: v.at }
+  } catch {
+    return null
+  }
+}
+
+async function sharedFile($: Engine): Promise<string | null> {
+  if (sharedPath !== undefined) return sharedPath
+  const [explicit, home, profile] = await Promise.all([
+    $.env.get('CLAUDE_CONFIG_DIR'),
+    $.env.get('HOME'),
+    $.env.get('USERPROFILE'),
+  ])
+  const base = home ?? profile
+  const dir = explicit ?? (base ? `${base.replace(/[\\/]+$/, '')}/.claude` : null)
+  sharedPath = dir ? `${dir.replace(/[\\/]+$/, '')}/${SHARED_FILE}` : null
+  return sharedPath
+}
+
+async function readShared($: Engine): Promise<Windows | null> {
+  const path = await sharedFile($)
+  if (!path) return null
+  return $.fs.read(path).then(parseShared, () => null)
+}
+
+/**
+ * Keeps the newest of this session's reading and the shared one: takes the
+ * shared one when another session measured later, writes ours when it is newer.
+ */
+async function sync($: Engine, mine: Windows | null): Promise<void> {
+  const shared = await readShared($)
+  const local = mine ?? (await read($, windows))
+  if (shared && shared.at > local.at) {
+    await update($, windows, () => shared)
+    return
+  }
+  if (local.at > 0 && (local.session || local.week) && (!shared || local.at > shared.at)) {
+    const path = await sharedFile($)
+    if (path) await $.fs.write(path, JSON.stringify(local)).catch(() => {})
+  }
+}
+
+/** A reading this session's own API response just reported. */
+async function measured($: Engine, rateLimits: readonly SessionRateLimit[]): Promise<void> {
+  if (rateLimits.length === 0) return
+  const value = pick(rateLimits, await $.clock.now())
+  await update($, windows, () => value)
+  await sync($, value)
+}
+
+/** Once a minute: counts the cache down and picks up what other sessions measured. */
+async function tick($: Engine): Promise<void> {
+  const at = await $.clock.now()
+  await update($, cache, v => ({ ...v, checkedAt: at }))
+  await sync($, null)
+}
+
+function arm($: Engine): void {
+  if (ticker) return
+  ticker = $.clock.every(CHECK_EVERY_MS, () => {
+    tick($).catch(() => {})
+  })
+}
+
+function bar(percent: number, width: number): { full: string; empty: string } {
+  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)))
+  return { full: '█'.repeat(filled), empty: '█'.repeat(width - filled) }
 }
 
 function tone(percent: number): 'success' | 'warning' | 'error' {
@@ -73,20 +181,27 @@ function tone(percent: number): 'success' | 'warning' | 'error' {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// Reset time only. Session: "16:00". Week: "09/11 15:00" (day/month; month/day in English).
-function resetLabel(iso: string | null, withDate: boolean, l: Lang): string | null {
+// Time left until the reset: "8min", "13h48", "2d05h"; null when unknown or passed.
+function resetLabel(iso: string | null, now: number): string | null {
   if (!iso) return null
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return null
-  const time = `${pad(d.getHours())}:${pad(d.getMinutes())}`
-  if (!withDate) return time
-  const date = l === 'en' ? `${pad(d.getMonth() + 1)}/${pad(d.getDate())}` : `${pad(d.getDate())}/${pad(d.getMonth() + 1)}`
-  return `${date} ${time}`
+  const at = Date.parse(iso)
+  if (!Number.isFinite(at) || at <= now) return null
+  const minutes = Math.ceil((at - now) / 60000)
+  if (minutes < 60) return `${minutes}min`
+  const hours = Math.floor(minutes / 60)
+  if (hours < 24) return `${hours}h${pad(minutes % 60)}`
+  return `${Math.floor(hours / 24)}d${pad(hours % 24)}h`
 }
 
-// "61k", "1.2M", "850".
+// "$2.96" in English, "US$ 2.96" otherwise.
+function costLabel(usd: number, l: Lang): string {
+  const value = usd >= 100 ? usd.toFixed(0) : usd.toFixed(2)
+  return l === 'en' ? `$${value}` : `US$ ${value}`
+}
+
+// "61k", "1.2M", "1M", "850".
 function tokenLabel(tokens: number): string {
-  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1)}M`
+  if (tokens >= 1_000_000) return `${(tokens / 1_000_000).toFixed(1).replace(/\.0$/, '')}M`
   if (tokens >= 1000) return `${Math.round(tokens / 1000)}k`
   return String(tokens)
 }
@@ -112,7 +227,9 @@ export const register: Register = on => {
       $.clock.now(),
       $.store.get(STORE_LANG),
     ])
-    await update($, windows, () => pick(usage.rateLimits))
+    await remeter($, usage)
+    // A reading of unknown age: any session's shared reading replaces it.
+    await update($, windows, w => (w.at > 0 ? w : pick(usage.rateLimits, 0)))
     if (savedLang === 'en' || savedLang === 'pt' || savedLang === 'es') {
       await update($, lang, () => savedLang)
     }
@@ -134,17 +251,12 @@ export const register: Register = on => {
       }
     }
 
-    // Recheck once a minute: counts the warm cache down, then flips to the
-    // expired icon. Once expired nothing changes on screen, so no redraw.
-    $.clock.every(CHECK_EVERY_MS, () => {
-      void (async () => {
-        const at = await $.clock.now()
-        const c = await read($, cache)
-        if (c.lastResponseAt !== null && !isExpired(c)) {
-          await update($, cache, v => ({ ...v, checkedAt: at }))
-        }
-      })()
-    })
+    // Recheck once a minute: counts the warm cache down, flips to the expired
+    // icon, and follows the rate limits other sessions measured.
+    ticker?.cancel()
+    ticker = null
+    arm($)
+    await sync($, null).catch(() => {})
 
     return next(e)
   })
@@ -167,6 +279,7 @@ export const register: Register = on => {
   })
 
   on('prompt.submit', async ($, e, next) => {
+    arm($)
     const detected = detectLang(e.text)
     if (detected && detected !== (await read($, lang))) {
       await update($, lang, () => detected)
@@ -176,14 +289,21 @@ export const register: Register = on => {
   })
 
   on('session.measure', async ($, e, next) => {
-    await update($, windows, () => pick(e.rateLimits))
+    arm($)
+    await measured($, e.rateLimits).catch(() => {})
+    await remeter($, e)
     return next(e)
   })
 
   on('turn.complete', async ($, e, next) => {
+    arm($)
+    const usage = await $.session.usage()
+    // Any response, a subagent's too, is a fresh rate-limit reading.
+    await measured($, usage.rateLimits).catch(() => {})
+    await remeter($, usage)
     // A subagent's turn warms its own cache, not the main conversation's.
     if (e.agentId !== undefined) return next(e)
-    const [usage, id, now] = await Promise.all([$.session.usage(), $.session.id(), $.clock.now()])
+    const [id, now] = await Promise.all([$.session.id(), $.clock.now()])
     const value: Cache = {
       lastResponseAt: now,
       tokens: usage.context.tokens ?? null,
@@ -195,7 +315,8 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const [value, c, l] = await Promise.all([read($, windows), read($, cache), read($, lang)])
+    const [stored, c, l, m] = await Promise.all([read($, windows), read($, cache), read($, lang), read($, meter)])
+    const value = { session: current(stored.session, c.checkedAt), week: current(stored.week, c.checkedAt) }
     const expired = isExpired(c)
     const hasCache = c.lastResponseAt !== null
     if (e.props.hasSurvey || (value.session === null && value.week === null && !hasCache)) {
@@ -204,8 +325,27 @@ export const register: Register = on => {
 
     const { Box, Text } = $.ui.resolve(e)
     const labels = LABELS[l]
+    // Shorter bars where the line would not fit; the items wrap past that.
+    const width = e.props.bodyColumns < 140 ? 6 : BAR_WIDTH
 
-    const item = (key: string, label: string, w: Window | null, withDate: boolean) => {
+    const meterText = (key: string, label: string, percent: number, tail: string | null) => {
+      const { full, empty } = bar(percent, width)
+      return (
+        <Text key={key}>
+          <Text bold>{label}</Text>
+          <Text> </Text>
+          <Text color={tone(percent)}>{full}</Text>
+          <Text color="subtle">{empty}</Text>
+          <Text> </Text>
+          <Text bold color={tone(percent)}>
+            {String(Math.round(percent)).padStart(3, ' ')}%
+          </Text>
+          {tail ? <Text dimColor> {tail}</Text> : null}
+        </Text>
+      )
+    }
+
+    const item = (key: string, label: string, w: Window | null) => {
       if (w === null) {
         return (
           <Text key={key} dimColor>
@@ -213,22 +353,39 @@ export const register: Register = on => {
           </Text>
         )
       }
-      const { full, empty } = bar(w.percent)
-      const reset = resetLabel(w.resetsAt, withDate, l)
-      return (
-        <Text key={key}>
-          <Text bold>{label}</Text>
-          <Text> </Text>
-          <Text color={tone(w.percent)}>{full}</Text>
-          <Text color="subtle">{empty}</Text>
-          <Text> </Text>
-          <Text bold color={tone(w.percent)}>
-            {String(Math.round(w.percent)).padStart(3, ' ')}%
-          </Text>
-          {reset ? <Text dimColor> [{reset}]</Text> : null}
-        </Text>
-      )
+      const reset = resetLabel(w.resetsAt, c.checkedAt)
+      return meterText(key, label, w.percent, reset ? `↻ ${reset}` : null)
     }
+
+    const sep = (key: string) => (
+      <Text key={key} dimColor>
+        │
+      </Text>
+    )
+
+    //   "Context ██░░░░ 23% 225k/1M"
+    const contextItem =
+      m.contextTokens !== null && m.contextWindow
+        ? [
+            sep('sep-ctx'),
+            meterText(
+              'context',
+              labels.context,
+              (m.contextTokens / m.contextWindow) * 100,
+              `${tokenLabel(m.contextTokens)}/${tokenLabel(m.contextWindow)}`,
+            ),
+          ]
+        : null
+    //   "US$ 2.96"
+    const costItem =
+      m.costUsd !== null && m.costUsd > 0
+        ? [
+            sep('sep-cost'),
+            <Text key="cost" dimColor>
+              {costLabel(m.costUsd, l)}
+            </Text>,
+          ]
+        : null
 
     // Same on every surface, after the week, one or the other, never both:
     //   warm:    " │ ◷ 46m"  (time the prompt cache has left; yellow in its last 5 minutes)
@@ -253,12 +410,12 @@ export const register: Register = on => {
       : null
 
     return (
-      <Box flexDirection="row" gap={2}>
-        {item('session', labels.session, value.session, false)}
-        <Text key="sep" dimColor>
-          │
-        </Text>
-        {item('week', labels.week, value.week, true)}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
+        {item('session', labels.session, value.session)}
+        {sep('sep')}
+        {item('week', labels.week, value.week)}
+        {contextItem}
+        {costItem}
         {cacheItem}
       </Box>
     )
