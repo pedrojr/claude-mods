@@ -6,10 +6,10 @@ A collection of mods (plugins) for Claude Code. Each mod lives in its own folder
 
 | Mod | What it does |
 | --- | --- |
-| [usage-bar](plugins/usage-bar) | One-line usage meter above the prompt: current session and this week, with percent, bar and reset time, plus a prompt-cache countdown. |
-| [agents-panel](plugins/agents-panel) | Side pane with the sessions, agents and subagents on the machine (desktop, terminal, VS Code) that are active or still have a warm prompt cache, each with a line on what it did last; green dot while active. Clicking a title opens that session or agent. Opens by itself in the desktop app; `/agents-panel` or the chip above the prompt opens it anywhere. |
-| [usage-report](plugins/usage-report) | `/report` opens a pane with today's usage across every session on the machine: tokens, models, effort levels, tool calls (ok, error, denied), retries, API errors, interrupted turns, sessions and subagents. |
-| [model-router](plugins/model-router) | Rates the first prompt of a session and picks the model and effort for it (haiku, sonnet or opus; medium or high, high when the starting context passes 100k tokens), then keeps them for the whole session. Subagents get their own model and effort by the difficulty of their part. `/route` shows or overrides the choice. |
+| [model-router](plugins/model-router) | Rates the first prompt of a session and picks the model and effort for it (haiku, sonnet or opus; medium or high, high when the starting context passes 100k tokens), then keeps them for the whole session. A bare `ok` or `continue` never picks the route. Subagents get their own model and effort by the difficulty of their part. `/route` shows or overrides the choice. |
+| [usage-bar](plugins/usage-bar) | One-line usage meter above the prompt: current session and this week, with percent, bar and time to reset, the context window fill, the session cost and a prompt-cache countdown. Updates every minute and follows what other sessions spend. |
+| [agents-panel](plugins/agents-panel) | Side pane with the sessions, agents and subagents on the machine (desktop, terminal, VS Code) that are active or still have a warm prompt cache, each with a line on what it did last; green dot while active. Clicking a title opens that session or agent, in the desktop app or VS Code. Opens by itself in the desktop app; `/agents-panel` or the chip above the prompt opens it anywhere. |
+| [usage-report](plugins/usage-report) | `/report` opens a pane with today's usage (`/report week` for 7 days) across every session on the machine: tokens, cache hit rate, estimated cost, models, top sessions, effort levels, tool calls (ok, error, denied), retries, API errors, interrupted turns, sessions and subagents. |
 
 ## Install
 
@@ -19,17 +19,17 @@ From a shell:
 
 ```bash
 claude plugin marketplace add pedrojr/claude-mods
+claude plugin install model-router@claude-mods --scope user
 claude plugin install usage-bar@claude-mods --scope user
 claude plugin install agents-panel@claude-mods --scope user
 claude plugin install usage-report@claude-mods --scope user
-claude plugin install model-router@claude-mods --scope user
 ```
 
 At the prompt of a Claude Code terminal session:
 
 ```
 /plugin marketplace add pedrojr/claude-mods
-/plugin install agents-panel@claude-mods
+/plugin install model-router@claude-mods
 ```
 
 In the desktop app, where `/plugin` does not run: click **+** next to the prompt box, then **Plugins**, **Add marketplace** with `pedrojr/claude-mods`, then **Add plugin**.
