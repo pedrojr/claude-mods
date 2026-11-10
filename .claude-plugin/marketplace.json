@@ -21,6 +21,11 @@
       "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it in the desktop app or VS Code."
     },
     {
+      "name": "changed-files",
+      "source": "./plugins/changed-files",
+      "description": "Side pane with the repository's changed files, grouped as VS Code groups them (merge, staged, changes); click a file to see its diff below the list."
+    },
+    {
       "name": "usage-report",
       "source": "./plugins/usage-report",
       "description": "Usage across every session on the machine, today or the last 7 days: tokens, cache hit, estimated cost, models, top sessions, tool calls ok and failed, retries, API errors. Open it with /report."

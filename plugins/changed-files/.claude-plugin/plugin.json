@@ -1,0 +1,7 @@
+{
+  "name": "changed-files",
+  "version": "0.1.0",
+  "description": "Side pane with the repository's changed files, grouped as VS Code groups them (merge, staged, changes); click a file to see its diff below the list.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}
