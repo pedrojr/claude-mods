@@ -38,7 +38,6 @@ async function remeter($: Engine, usage: Parameters<typeof meterOf>[0]): Promise
   if (JSON.stringify(prev) !== JSON.stringify(next)) await update($, meter, () => next)
 }
 
-const BAR_WIDTH = 12
 // Prompt cache lifetime. Claude Code uses a 1-hour TTL on subscriptions and
 // 5 minutes on some API setups; the engine does not tell plugins which one.
 const CACHE_TTL_MS = 60 * 60 * 1000
@@ -168,9 +167,11 @@ function arm($: Engine): void {
   })
 }
 
-function bar(percent: number, width: number): { full: string; empty: string } {
-  const filled = Math.max(0, Math.min(width, Math.round((percent / 100) * width)))
-  return { full: '█'.repeat(filled), empty: '█'.repeat(width - filled) }
+// A one-character progress ring, filled by quarters: ○ ◔ ◑ ◕ ●.
+const RINGS = ['○', '◔', '◑', '◕', '●'] as const
+function ring(percent: number): string {
+  const p = Math.max(0, Math.min(100, percent))
+  return RINGS[p >= 100 ? 4 : p <= 0 ? 0 : Math.min(3, Math.max(1, Math.round(p / 25)))]
 }
 
 function tone(percent: number): 'success' | 'warning' | 'error' {
@@ -181,7 +182,7 @@ function tone(percent: number): 'success' | 'warning' | 'error' {
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
-// Time left until the reset: "8min", "13h48", "2d05h"; null when unknown or passed.
+// Time left until the reset: "8min", "13h 48min", "2d 05h"; null when unknown or passed.
 function resetLabel(iso: string | null, now: number): string | null {
   if (!iso) return null
   const at = Date.parse(iso)
@@ -189,8 +190,8 @@ function resetLabel(iso: string | null, now: number): string | null {
   const minutes = Math.ceil((at - now) / 60000)
   if (minutes < 60) return `${minutes}min`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h${pad(minutes % 60)}`
-  return `${Math.floor(hours / 24)}d${pad(hours % 24)}h`
+  if (hours < 24) return `${hours}h ${pad(minutes % 60)}min`
+  return `${Math.floor(hours / 24)}d ${pad(hours % 24)}h`
 }
 
 // "$2.96" in English, "US$ 2.96" otherwise.
@@ -325,36 +326,50 @@ export const register: Register = on => {
 
     const { Box, Text } = $.ui.resolve(e)
     const labels = LABELS[l]
-    // Shorter bars where the line would not fit; the items wrap past that.
-    const width = e.props.bodyColumns < 140 ? 6 : BAR_WIDTH
-
-    const meterText = (key: string, label: string, percent: number, tail: string | null) => {
-      const { full, empty } = bar(percent, width)
-      return (
-        <Text key={key}>
-          <Text bold>{label}</Text>
-          <Text> </Text>
-          <Text color={tone(percent)}>{full}</Text>
-          <Text color="subtle">{empty}</Text>
-          <Text> </Text>
-          <Text bold color={tone(percent)}>
-            {String(Math.round(percent)).padStart(3, ' ')}%
-          </Text>
-          {tail ? <Text dimColor> {tail}</Text> : null}
-        </Text>
-      )
+    // "(8min)" after the percent; `extra` (the session cost) follows the reset time.
+    const tailOf = (w: Window, extra: string | null = null) => {
+      const reset = resetLabel(w.resetsAt, c.checkedAt)
+      return [reset ? `(${reset})` : null, extra].filter(Boolean).join(' ') || null
     }
+    //   "US$ 2.96", drawn in the session item after its reset time.
+    const cost = m.costUsd !== null && m.costUsd > 0 ? costLabel(m.costUsd, l) : null
+    const sessionTail = value.session ? tailOf(value.session, cost) : null
+    const weekTail = value.week ? tailOf(value.week) : null
+    //   "Context ◔ 23% (225k/1M)"
+    const context =
+      m.contextTokens !== null && m.contextWindow
+        ? {
+            percent: (m.contextTokens / m.contextWindow) * 100,
+            tail: `(${tokenLabel(m.contextTokens)}/${tokenLabel(m.contextWindow)})`,
+          }
+        : null
 
-    const item = (key: string, label: string, w: Window | null) => {
+    // Same on every surface, after the week, one or the other, never both:
+    //   warm:    " │ ◷ 46m"  (time the prompt cache has left; yellow in its last 5 minutes)
+    //   expired: " │ ◷ ~61k" (tokens the next message re-caches)
+    const left = minutesLeft(c)
+
+    //   "Sessão ◕ 72% (23min)": the ring and the percent in the window's tone.
+    const meterText = (key: string, label: string, percent: number, tail: string | null) => (
+      <Text key={key}>
+        <Text bold>{label}</Text>
+        <Text color={tone(percent)}> {ring(percent)} </Text>
+        <Text bold color={tone(percent)}>
+          {Math.round(percent)}%
+        </Text>
+        {tail ? <Text dimColor> {tail}</Text> : null}
+      </Text>
+    )
+
+    const item = (key: string, label: string, w: Window | null, tail: string | null, extra: string | null) => {
       if (w === null) {
         return (
           <Text key={key} dimColor>
-            {label} --
+            {label} --{extra ? ` ${extra}` : ''}
           </Text>
         )
       }
-      const reset = resetLabel(w.resetsAt, c.checkedAt)
-      return meterText(key, label, w.percent, reset ? `↻ ${reset}` : null)
+      return meterText(key, label, w.percent, tail)
     }
 
     const sep = (key: string) => (
@@ -363,34 +378,10 @@ export const register: Register = on => {
       </Text>
     )
 
-    //   "Context ██░░░░ 23% 225k/1M"
-    const contextItem =
-      m.contextTokens !== null && m.contextWindow
-        ? [
-            sep('sep-ctx'),
-            meterText(
-              'context',
-              labels.context,
-              (m.contextTokens / m.contextWindow) * 100,
-              `${tokenLabel(m.contextTokens)}/${tokenLabel(m.contextWindow)}`,
-            ),
-          ]
-        : null
-    //   "US$ 2.96"
-    const costItem =
-      m.costUsd !== null && m.costUsd > 0
-        ? [
-            sep('sep-cost'),
-            <Text key="cost" dimColor>
-              {costLabel(m.costUsd, l)}
-            </Text>,
-          ]
-        : null
+    const contextItem = context
+      ? [sep('sep-ctx'), meterText('context', labels.context, context.percent, context.tail)]
+      : null
 
-    // Same on every surface, after the week, one or the other, never both:
-    //   warm:    " │ ◷ 46m"  (time the prompt cache has left; yellow in its last 5 minutes)
-    //   expired: " │ ◷ ~61k" (tokens the next message re-caches)
-    const left = minutesLeft(c)
     const cacheBody = expired ? (
       <Text key="cache" color="warning">
         ◷{c.tokens !== null ? <Text dimColor> ~{tokenLabel(c.tokens)}</Text> : null}
@@ -400,22 +391,14 @@ export const register: Register = on => {
         ◷ {left}m
       </Text>
     ) : null
-    const cacheItem = cacheBody
-      ? [
-          <Text key="sep2" dimColor>
-            │
-          </Text>,
-          cacheBody,
-        ]
-      : null
+    const cacheItem = cacheBody ? [sep('sep2'), cacheBody] : null
 
     return (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={2}>
-        {item('session', labels.session, value.session)}
+      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+        {item('session', labels.session, value.session, sessionTail, cost)}
         {sep('sep')}
-        {item('week', labels.week, value.week)}
+        {item('week', labels.week, value.week, weekTail, null)}
         {contextItem}
-        {costItem}
         {cacheItem}
       </Box>
     )

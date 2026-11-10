@@ -81,6 +81,24 @@ test('an idle session picks up a newer reading another session shared', async ($
   await band.unmount()
 })
 
+test('a progress ring sits before each percent, filled by quarters', async ($, on) => {
+  const files = new Map<string, string>()
+  setup(on, files)
+  on('session.usage', () => ({
+    value: { startedAt: 0, context: { window: 1_000_000, tokens: 95_000 }, rateLimits: limits(72, 50), cost: { usd: 2.96 } },
+  }))
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.turn.complete(turn())
+
+  const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
+  const texts = (await band.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
+  expect(texts).toContain('◕ 72%')
+  expect(texts).toContain('◑ 50%')
+  expect(texts).toContain('◔ 10%')
+  expect(texts).not.toContain('█')
+  await band.unmount()
+})
+
 test('the line shows the reset countdown, the context fill and the session cost', async ($, on) => {
   const files = new Map<string, string>()
   const clock = setup(on, files)
@@ -103,14 +121,14 @@ test('the line shows the reset countdown, the context fill and the session cost'
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   const texts = (await band.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
-  expect(texts).toContain('↻ 8min')
-  expect(texts).toContain('↻ 13h48')
-  expect(texts).toContain('225k/1M')
+  expect(texts).toContain('(8min) US$ 2.96')
+  expect(texts).toContain('(13h 48min)')
+  expect(texts).toContain('(225k/1M)')
   expect(texts).toContain(' 23%')
-  expect(texts).toContain('US$ 2.96')
+  expect(texts).not.toContain('↻')
   // The session window resets: it drops to 0% at once.
   await clock.advance(9 * 60_000)
   const after = (await band.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
-  expect(after).toContain('  0%')
+  expect(after).toContain('○ 0%')
   await band.unmount()
 })
