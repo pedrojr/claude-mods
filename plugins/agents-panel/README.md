@@ -29,7 +29,8 @@ A side pane for Claude Code that shows, in one place, what is running on your ma
 - **This session** goes back to its main conversation.
 - **An agent of this session** puts its transcript in the main view. `← Main` (or `m`) goes back.
 - **An agent of another session** opens the session it belongs to.
-- **A session in the terminal or VS Code** cannot be brought to the front by a plugin; a toast says where it runs.
+- **A session in VS Code** focuses the VS Code window of its folder (`code <folder>`), then opens the session in the Claude Code extension through its link `vscode://anthropic.claude-code/open?session=<id>` (`code --open-url`). If the `code` command is not on the PATH, a toast says where the session runs.
+- **A session in the terminal** cannot be brought to the front by a plugin; a toast says where it runs.
 
 ## Where it shows
 
@@ -67,4 +68,4 @@ The session registry and transcript layout under `~/.claude` are Claude Code int
 
 ## Privacy
 
-The mod only reads local files under your Claude Code config folder (`CLAUDE_CONFIG_DIR`, or `~/.claude`). Nothing leaves the machine. Opening a desktop session runs the OS's URL opener (`rundll32 url.dll,FileProtocolHandler` on Windows, `open` on macOS, `xdg-open` on Linux) with the app's `claude://` link.
+The mod only reads local files under your Claude Code config folder (`CLAUDE_CONFIG_DIR`, or `~/.claude`). Nothing leaves the machine. Opening a desktop session runs the OS's URL opener (`rundll32 url.dll,FileProtocolHandler` on Windows, `open` on macOS, `xdg-open` on Linux) with the app's `claude://` link. Opening a VS Code session runs the `code` command.

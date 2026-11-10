@@ -198,6 +198,27 @@ export function openUrlArgv(url: string, isWindows: boolean, isMac: boolean): st
   return [isMac ? 'open' : 'xdg-open', url]
 }
 
+const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** The Claude Code extension's link that opens one of its sessions in VS Code; null for an id it would refuse. */
+export function vscodeLink(sessionId: string): string | null {
+  return UUID.test(sessionId) ? `vscode://anthropic.claude-code/open?session=${sessionId}` : null
+}
+
+/**
+ * The `code` command lines that bring a VS Code session to the front: first
+ * the window of its folder (focused when open, opened when not), then the
+ * extension's link, which VS Code hands to the window just focused.
+ */
+export function vscodeArgvs(cwd: string, link: string, isWindows: boolean): string[][] {
+  // `code` is a .cmd script on Windows, run through cmd.
+  const code = isWindows ? ['cmd', '/d', '/c', 'code'] : ['code']
+  return [
+    ...(cwd ? [[...code, cwd]] : []),
+    [...code, '--open-url', link],
+  ]
+}
+
 /** The desktop app's link that brings one of its sessions to the front. */
 export function desktopLink(hostSessionId: string): string {
   return `claude://code/continue?session=${encodeURIComponent(hostSessionId)}&source=desktop_action`

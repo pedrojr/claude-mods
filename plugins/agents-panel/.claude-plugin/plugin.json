@@ -1,6 +1,6 @@
 {
   "name": "agents-panel",
-  "version": "0.4.1",
+  "version": "0.5.0",
   "description": "Side pane with the sessions, agents and subagents that are active or still have a warm prompt cache, each with what it did last; click a title to open it.",
   "license": "MIT",
   "types": "./types/index.d.ts"

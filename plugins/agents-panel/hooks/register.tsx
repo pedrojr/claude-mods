@@ -13,6 +13,8 @@ import {
   parseRegistry,
   projectSlug,
   visible,
+  vscodeArgvs,
+  vscodeLink,
 } from './sessions'
 import type { AgentMeta, RegistryRow } from './sessions'
 
@@ -235,6 +237,18 @@ async function openSession($: Engine, session: SessionView): Promise<void> {
       .run(openUrlArgv(desktopLink(session.hostSessionId), found.isWindows, found.isMac))
       .catch(() => null)
     if (result?.exitCode === 0) return
+  }
+  const link = session.entrypoint === 'VS Code' ? vscodeLink(session.sessionId) : null
+  if (link && found) {
+    let ok = true
+    for (const argv of vscodeArgvs(session.cwd, link, found.isWindows)) {
+      const result = await $.process.run(argv).catch(() => null)
+      if (result?.exitCode !== 0) {
+        ok = false
+        break
+      }
+    }
+    if (ok) return
   }
   await $.ui.toast(`"${session.name}" runs in ${session.entrypoint} (${folderOf(session.cwd)}); switch to it there.`)
 }

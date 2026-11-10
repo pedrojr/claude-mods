@@ -10,6 +10,8 @@ import {
   parseRegistry,
   projectSlug,
   visible,
+  vscodeArgvs,
+  vscodeLink,
 } from '../hooks/sessions'
 import type { AgentView, SessionView } from '../types'
 
@@ -134,5 +136,23 @@ describe('opening a session', () => {
     expect(openUrlArgv(url, true, false)).toEqual(['rundll32', 'url.dll,FileProtocolHandler', url])
     expect(openUrlArgv(url, false, true)).toEqual(['open', url])
     expect(openUrlArgv(url, false, false)).toEqual(['xdg-open', url])
+  })
+})
+
+describe('VS Code sessions', () => {
+  const id = '8191d9d5-11c7-42f9-af4d-3adc3b8dbfc7'
+
+  test('the extension link carries the session id, and only a valid one', () => {
+    expect(vscodeLink(id)).toBe(`vscode://anthropic.claude-code/open?session=${id}`)
+    expect(vscodeLink('not-a-uuid')).toBe(null)
+  })
+
+  test('focuses the folder window first, then hands it the link', () => {
+    const link = vscodeLink(id)!
+    expect(vscodeArgvs('d:\dev\ragnar', link, true)).toEqual([
+      ['cmd', '/d', '/c', 'code', 'd:\dev\ragnar'],
+      ['cmd', '/d', '/c', 'code', '--open-url', link],
+    ])
+    expect(vscodeArgvs('', link, false)).toEqual([['code', '--open-url', link]])
   })
 })
