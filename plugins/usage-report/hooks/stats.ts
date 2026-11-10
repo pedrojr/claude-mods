@@ -3,7 +3,7 @@
 //   <config>/projects/<slug>/<sessionId>/subagents/agent-<id>.jsonl     its subagents
 //   <config>/projects/<slug>/<sessionId>/subagents/agent-<id>.meta.json
 
-import type { Count, Report, Tokens } from '../types'
+import type { Count, Report, SessionUsage, Tokens } from '../types'
 
 /** One API response, counted once even when its blocks span several lines. */
 export type MessageRow = { model: string; effort: string | null; tokens: Tokens; at: number }
@@ -21,6 +21,48 @@ export type FileStats = {
   apiErrors: number
   /** Turns the person stopped. */
   interrupts: number
+  /** The session's title (`/rename` or the app's), the last one written. */
+  title: string | null
+  /** The first prompt of the period, cut short: the name when there is no title. */
+  firstPrompt: string | null
+}
+
+/** Dollars per million tokens. Cache writes at the 1-hour rate (2x input) Claude Code uses on subscriptions. */
+type Price = { input: number; output: number; cacheRead: number; cacheWrite: number }
+
+const price = (input: number, output: number, cacheRead = input / 10): Price => ({ input, output, cacheRead, cacheWrite: input * 2 })
+
+/** First-party API list prices, by model id prefix; the longest matching prefix wins. */
+export const PRICES: Readonly<Record<string, Price>> = {
+  'claude-fable-5-2': price(8, 40, 0.2),
+  'claude-fable-5-1': price(10, 50),
+  'claude-fable-5': price(10, 50),
+  'claude-mythos-5-2': price(8, 40, 0.2),
+  'claude-mythos-5': price(10, 50),
+  'claude-opus-5-5': price(4, 20, 0.2),
+  'claude-opus-5': price(5, 25),
+  'claude-opus-4': price(5, 25),
+  'claude-sonnet-5-5': price(2, 10, 0.1),
+  'claude-sonnet-5': price(2, 10),
+  'claude-sonnet-4': price(3, 15),
+  'claude-haiku-5-5': price(0.1, 0.5),
+  'claude-haiku-4': price(1, 5),
+}
+
+/** Estimated list-price cost of a response; 0 for a model not in the table. */
+export function costOf(model: string, t: Tokens): number {
+  const key = Object.keys(PRICES)
+    .filter(k => model.startsWith(k))
+    .sort((a, b) => b.length - a.length)[0]
+  if (!key) return 0
+  const p = PRICES[key]!
+  return (t.input * p.input + t.output * p.output + t.cacheRead * p.cacheRead + t.cacheWrite * p.cacheWrite) / 1_000_000
+}
+
+/** Share of the input tokens read from the prompt cache. */
+export const cacheHitRate = (t: Tokens): number => {
+  const read = t.input + t.cacheRead + t.cacheWrite
+  return read > 0 ? t.cacheRead / read : 0
 }
 
 export const emptyTokens = (): Tokens => ({ input: 0, output: 0, cacheRead: 0, cacheWrite: 0 })
@@ -49,6 +91,8 @@ type Line = {
   isApiErrorMessage?: boolean
   effort?: string
   toolDenialKind?: string
+  customTitle?: string
+  isMeta?: boolean
   message?: { id?: string; model?: string; usage?: Usage; content?: string | Block[] }
 }
 
@@ -70,16 +114,21 @@ export function parseTranscript(text: string, dayStart: number, sidechain = fals
 
 /** The same reading, fed one line at a time: for a transcript streamed in pieces. */
 export function createParser(dayStart: number, sidechain = false): { line: (raw: string) => void; stats: FileStats } {
-  const stats: FileStats = { messages: {}, calls: {}, retries: 0, apiErrors: 0, interrupts: 0 }
+  const stats: FileStats = { messages: {}, calls: {}, retries: 0, apiErrors: 0, interrupts: 0, title: null, firstPrompt: null }
   // The tool of the last failed call, until the next call shows whether it was tried again.
   let failedTool: string | null = null
   const feed = (raw: string): void => {
     // Cheap filter before parsing: only these lines count.
-    if (!raw.startsWith('{') || !(raw.includes('"assistant"') || raw.includes('"user"'))) return
+    if (!raw.startsWith('{') || !(raw.includes('"assistant"') || raw.includes('"user"') || raw.includes('"custom-title"'))) return
     let line: Line
     try {
       line = JSON.parse(raw) as Line
     } catch {
+      return
+    }
+    // A title line has no timestamp: it names the session whatever the period.
+    if (line.type === 'custom-title') {
+      if (typeof line.customTitle === 'string' && line.customTitle.trim()) stats.title = line.customTitle.trim().slice(0, 80)
       return
     }
     if (line.isSidechain && !sidechain) return
@@ -125,11 +174,19 @@ export function createParser(dayStart: number, sidechain = false): { line: (raw:
     if (line.type === 'user') {
       if (typeof content === 'string') {
         if (content.startsWith(INTERRUPT)) stats.interrupts += 1
+        else if (stats.firstPrompt === null && !line.isMeta && !sidechain && !content.startsWith('<')) {
+          const text = content.trim().split('\n')[0]!.trim()
+          if (text) stats.firstPrompt = text.length > 60 ? `${text.slice(0, 59)}…` : text
+        }
         return
       }
       if (!Array.isArray(content)) return
       for (const block of content) {
         if (block.type === 'text' && block.text?.startsWith(INTERRUPT)) stats.interrupts += 1
+        else if (block.type === 'text' && stats.firstPrompt === null && !line.isMeta && !sidechain && block.text && !block.text.startsWith('<')) {
+          const text = block.text.trim().split('\n')[0]!.trim()
+          if (text) stats.firstPrompt = text.length > 60 ? `${text.slice(0, 59)}…` : text
+        }
         if (block.type !== 'tool_result' || !block.tool_use_id) continue
         const call = stats.calls[block.tool_use_id]
         if (!call) continue
@@ -157,23 +214,77 @@ export function agentIdOf(fileName: string): string | null {
   return match ? match[1]! : null
 }
 
-/** Local midnight of the day `now` falls in. */
-export function startOfDay(now: number): number {
+/** Local midnight of the day `now` falls in, or of `days - 1` days before it. */
+export function startOfDay(now: number, days = 1): number {
   const day = new Date(now)
   day.setHours(0, 0, 0, 0)
+  day.setDate(day.getDate() - (days - 1))
   return day.getTime()
 }
+
+/** `/report`, `/report today` → 1; `/report week`, `/report 7d`, `/report semana` → 7; anything else null. */
+export function parseDays(args: string): number | null {
+  const word = args.trim().toLowerCase()
+  if (word === '' || word === 'today' || word === 'day' || word === 'hoje' || word === 'hoy' || word === '1d') return 1
+  if (word === 'week' || word === '7d' || word === '7' || word === 'semana') return 7
+  return null
+}
+
+/** "$12.40", "$0.03". */
+export const usd = (n: number): string => `$${n >= 100 ? n.toFixed(0) : n.toFixed(2)}`
 
 const bump = (map: Map<string, number>, key: string, by = 1) => map.set(key, (map.get(key) ?? 0) + by)
 
 const ranked = (map: Map<string, number>): Count[] =>
   [...map.entries()].map(([name, count]) => ({ name, count })).sort((a, b) => b.count - a.count || a.name.localeCompare(b.name))
 
-/** One transcript as `report` takes it. */
-export type FileInput = { kind: 'session' | 'agent'; agentType?: string; stats: FileStats }
+/**
+ * One transcript as `report` takes it. `sessionId` ties a subagent's file to
+ * its session; `project` is the session's folder name, the last-resort label.
+ */
+export type FileInput = {
+  kind: 'session' | 'agent'
+  agentType?: string
+  sessionId?: string
+  project?: string
+  stats: FileStats
+}
 
-/** Adds up the day's transcripts, counting a message or a call once across files. */
-export function report(files: readonly FileInput[], dayStart: number, now: number, skipped: number): Report {
+/** The sessions that used the most tokens, with their subagents' responses counted in. */
+function topSessions(files: readonly FileInput[], limit: number): SessionUsage[] {
+  const by = new Map<string, { name: string; messages: Map<string, MessageRow> }>()
+  for (const file of files) {
+    if (!file.sessionId) continue
+    const entry = by.get(file.sessionId) ?? { name: '', messages: new Map<string, MessageRow>() }
+    if (file.kind === 'session') {
+      entry.name = file.stats.title ?? file.stats.firstPrompt ?? `${file.project ?? 'session'} · ${file.sessionId.slice(0, 8)}`
+    }
+    for (const [id, row] of Object.entries(file.stats.messages)) {
+      const seen = entry.messages.get(id)
+      entry.messages.set(id, seen ? { ...seen, tokens: maxTokens(seen.tokens, row.tokens) } : row)
+    }
+    by.set(file.sessionId, entry)
+  }
+  const rows: SessionUsage[] = []
+  for (const [id, entry] of by) {
+    if (entry.messages.size === 0) continue
+    let tokens = 0
+    let cost = 0
+    const perModel = new Map<string, number>()
+    for (const m of entry.messages.values()) {
+      const t = totalOf(m.tokens)
+      tokens += t
+      cost += costOf(m.model, m.tokens)
+      bump(perModel, m.model, t)
+    }
+    const model = ranked(perModel)[0]?.name ?? ''
+    rows.push({ name: entry.name || id.slice(0, 8), model, tokens, costUsd: cost, responses: entry.messages.size })
+  }
+  return rows.sort((a, b) => b.tokens - a.tokens).slice(0, limit)
+}
+
+/** Adds up the period's transcripts, counting a message or a call once across files. */
+export function report(files: readonly FileInput[], dayStart: number, now: number, skipped: number, days = 1): Report {
   const messages = new Map<string, MessageRow>()
   const calls = new Map<string, CallRow>()
   let retries = 0
@@ -206,7 +317,12 @@ export function report(files: readonly FileInput[], dayStart: number, now: numbe
   const byModel = new Map<string, Tokens>()
   const modelCounts = new Map<string, number>()
   const effortCounts = new Map<string, number>()
+  const costByModel = new Map<string, number>()
+  let costUsd = 0
   for (const m of messages.values()) {
+    const cost = costOf(m.model, m.tokens)
+    costUsd += cost
+    costByModel.set(m.model, (costByModel.get(m.model) ?? 0) + cost)
     const own = byModel.get(m.model) ?? emptyTokens()
     for (const key of ['input', 'output', 'cacheRead', 'cacheWrite'] as const) {
       tokens[key] += m.tokens[key]
@@ -233,8 +349,11 @@ export function report(files: readonly FileInput[], dayStart: number, now: numbe
   return {
     dayStart,
     now,
+    days,
     tokens,
-    models: ranked(modelCounts).map(c => ({ ...c, tokens: totalOf(byModel.get(c.name)!) })),
+    costUsd,
+    topSessions: topSessions(files, 5),
+    models: ranked(modelCounts).map(c => ({ ...c, tokens: totalOf(byModel.get(c.name)!), costUsd: costByModel.get(c.name) ?? 0 })),
     efforts: ranked(effortCounts),
     tools: { total: calls.size, ok, errors, denied, top: ranked(toolCounts).slice(0, 5), failing: ranked(failCounts).slice(0, 3) },
     retries,
@@ -259,9 +378,14 @@ export const percent = (part: number, whole: number): string => (whole > 0 ? `${
 export function reportText(r: Report): string {
   const t = r.tokens
   const lines = [
-    `Usage today`,
+    r.days === 1 ? `Usage today` : `Usage, last ${r.days} days`,
     `Tokens: ${compact(totalOf(t))} (input ${compact(t.input)} · output ${compact(t.output)} · cache read ${compact(t.cacheRead)} · cache write ${compact(t.cacheWrite)})`,
-    `Models: ${r.models.map(m => `${m.name} ${m.count} (${compact(m.tokens)} tok)`).join(' · ') || 'none'}`,
+    `Cache hit: ${percent(t.cacheRead, t.input + t.cacheRead + t.cacheWrite)} of input read from the cache`,
+    `Estimated cost at API prices: ${usd(r.costUsd)}`,
+    `Models: ${r.models.map(m => `${m.name} ${m.count} (${compact(m.tokens)} tok, ${usd(m.costUsd)})`).join(' · ') || 'none'}`,
+    ...(r.topSessions.length
+      ? ['Top sessions:', ...r.topSessions.map((s, i) => `  ${i + 1}. ${s.name} · ${s.model} · ${compact(s.tokens)} tok · ${usd(s.costUsd)}`)]
+      : []),
     `Effort: ${r.efforts.map(e => `${e.name} ${e.count}`).join(' · ') || 'none'}`,
     `Tool calls: ${r.tools.total} · ok ${r.tools.ok} · error ${r.tools.errors} · denied ${r.tools.denied}`,
     `Retries ${r.retries} · API errors ${r.apiErrors} · interrupted ${r.interrupts}`,

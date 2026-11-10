@@ -2,11 +2,25 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register } from 'claude-code'
 
 import type { Count, Report, Snapshot } from '../types'
-import { agentIdOf, agentTypeOf, compact, createParser, parseTranscript, percent, report, reportText, startOfDay, totalOf } from './stats'
+import {
+  agentIdOf,
+  agentTypeOf,
+  cacheHitRate,
+  compact,
+  createParser,
+  parseDays,
+  parseTranscript,
+  percent,
+  report,
+  reportText,
+  startOfDay,
+  totalOf,
+  usd,
+} from './stats'
 import type { FileInput, FileStats } from './stats'
 
 const PANE = 'usage-report'
-const TITLE = 'Usage today'
+const TITLE = 'Usage'
 const COMMAND = 'report'
 // How often the open pane re-reads the transcripts that changed.
 const POLL_MS = 60 * 1000
@@ -16,8 +30,8 @@ const MAX_READ_BYTES = 4 * 1024 * 1024 - 1
 const DOCK_COLUMNS = 48
 
 // Change the tag when Report's fields change: it drops what an earlier version stored.
-const snapshot = atom({ plugin: 'usage-report', key: 'snapshot' } as const, { report: null, loading: false } as Snapshot, {
-  shape: 'report-1',
+const snapshot = atom({ plugin: 'usage-report', key: 'snapshot' } as const, { report: null, loading: false, days: 1 } as Snapshot, {
+  shape: 'report-2',
 })
 
 // A report is a view only: none of its failures may get in the way of a turn.
@@ -112,7 +126,13 @@ async function readToday($: Engine, dayStart: number): Promise<{ files: FileInpu
       const sessions = entries.filter(e => e.kind === 'file' && e.name.endsWith('.jsonl') && e.mtimeMs >= dayStart)
       await Promise.all(
         sessions.map(async session => {
-          await tryRead(async () => ({ kind: 'session', stats: await statsOf($, `${dir}/${session.name}`, session, dayStart, false) }))
+          const sessionId = session.name.slice(0, -'.jsonl'.length)
+          await tryRead(async () => ({
+            kind: 'session',
+            sessionId,
+            project: folder.name,
+            stats: await statsOf($, `${dir}/${session.name}`, session, dayStart, false),
+          }))
           // A subagent writes to its session's transcript too, so only today's sessions are looked into.
           const agentsDir = `${dir}/${session.name.slice(0, -'.jsonl'.length)}/subagents`
           const agents = await $.fs.list(agentsDir).catch(() => [] as Entry[])
@@ -122,6 +142,7 @@ async function readToday($: Engine, dayStart: number): Promise<{ files: FileInpu
               .map(a =>
                 tryRead(async () => ({
                   kind: 'agent',
+                  sessionId,
                   agentType: await agentTypeFor($, `${agentsDir}/agent-${agentIdOf(a.name)}.meta.json`),
                   stats: await statsOf($, `${agentsDir}/${a.name}`, a, dayStart, true),
                 })),
@@ -135,27 +156,33 @@ async function readToday($: Engine, dayStart: number): Promise<{ files: FileInpu
 }
 
 /** Re-reads what changed and stores the report; concurrent callers share one run. */
-function refresh($: Engine): Promise<Report | null> {
-  if (running) return running
-  running = (async () => {
+function refresh($: Engine, days?: number): Promise<Report | null> {
+  // A change of period waits for the run in flight, then reads again.
+  if (running && days === undefined) return running
+  const before = running ?? Promise.resolve(null)
+  const run: Promise<Report | null> = (async () => {
+    await before.catch(ignore)
     try {
-      await update($, snapshot, s => ({ ...s, loading: true }))
+      await update($, snapshot, s => ({ ...s, loading: true, days: days ?? s.days }))
+      const period = (await read($, snapshot)).days
       const now = await $.clock.now()
-      const dayStart = startOfDay(now)
+      const dayStart = startOfDay(now, period)
       // A new day: yesterday's entries are of no more use.
       for (const [path, entry] of cache) if (entry.dayStart !== dayStart) cache.delete(path)
       const { files, skipped } = await readToday($, dayStart)
-      const next = report(files, dayStart, now, skipped)
-      await update($, snapshot, () => ({ report: next, loading: false }))
+      const next = report(files, dayStart, now, skipped, period)
+      await update($, snapshot, s => ({ ...s, report: next, loading: false }))
       return next
     } catch {
       await update($, snapshot, s => ({ ...s, loading: false })).catch(ignore)
       return null
     } finally {
-      running = null
+      // A later run chained on this one stays the one callers share.
+      if (running === run) running = null
     }
   })()
-  return running
+  running = run
+  return run
 }
 
 function startPolling($: Engine): void {
@@ -172,23 +199,32 @@ const clock = (ms: number): string => {
   return `${String(d.getHours()).padStart(2, '0')}:${String(d.getMinutes()).padStart(2, '0')}`
 }
 
+const day = (ms: number): string => {
+  const d = new Date(ms)
+  return `${String(d.getDate()).padStart(2, '0')}/${String(d.getMonth() + 1).padStart(2, '0')}`
+}
+
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
     await $.command.register({
       name: COMMAND,
-      description: "Show today's usage: tokens, models, effort, tool calls, errors, sessions and subagents",
+      description: "Show today's usage (or the week's): tokens, cache hit, estimated cost, models, top sessions, tool calls, errors",
+      argumentHint: '[today | week]',
       immediate: true,
     })
     return next(e)
   })
 
-  on('command.run', { command: COMMAND }, async $ => {
-    const result = await refresh($)
+  on('command.run', { command: COMMAND }, async ($, e) => {
+    const days = parseDays(e.args)
+    if (days === null) return { text: 'Usage: /report [today | week]' }
+    const result = await refresh($, days)
     const opened = await $.ui.open({ id: PANE, title: TITLE, columns: DOCK_COLUMNS, focus: true }).catch(() => null)
     if (opened?.isPlaced) startPolling($)
     if (!result) return { text: 'Usage report: the transcripts could not be read.' }
     // Where the pane shows, a short line is enough; elsewhere the reply carries the report.
-    return { text: opened?.isPlaced ? `Usage report opened (${compact(totalOf(result.tokens))} tokens today).` : reportText(result) }
+    const span = result.days === 1 ? 'today' : `in the last ${result.days} days`
+    return { text: opened?.isPlaced ? `Usage report opened (${compact(totalOf(result.tokens))} tokens ${span}).` : reportText(result) }
   })
 
   on('ui.close', async ($, e, next) => {
@@ -207,7 +243,7 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const { report: r, loading } = await read($, snapshot)
-    if (!r) return <Text dimColor>{loading ? 'Reading today’s transcripts…' : 'No report yet.'}</Text>
+    if (!r) return <Text dimColor>{loading ? 'Reading the transcripts…' : 'No report yet.'}</Text>
 
     const heading = (key: string, text: string) => (
       <Box key={key} marginTop={1}>
@@ -227,17 +263,23 @@ export const register: Register = on => {
     const total = totalOf(t)
     const responses = r.models.reduce((n, m) => n + m.count, 0)
     const failed = r.tools.errors + r.tools.denied
+    const hit = cacheHitRate(t)
 
     return (
       <Box flexDirection="column">
         <Box flexDirection="row" justifyContent="space-between">
           <Text dimColor>
-            {clock(r.dayStart)}–{clock(r.now)}
+            {r.days === 1 ? `today ${clock(r.dayStart)}–${clock(r.now)}` : `${day(r.dayStart)}–${day(r.now)} ${clock(r.now)}`}
             {loading ? ' · updating…' : ''}
           </Text>
-          <Button key="refresh" plain hotkey="r" onPress={() => void refresh($).catch(ignore)}>
-            ↻ Refresh
-          </Button>
+          <Box flexDirection="row" gap={2}>
+            <Button key="period" plain hotkey="w" onPress={() => void refresh($, r.days === 1 ? 7 : 1).catch(ignore)}>
+              {r.days === 1 ? '7 days' : 'Today'}
+            </Button>
+            <Button key="refresh" plain hotkey="r" onPress={() => void refresh($).catch(ignore)}>
+              ↻ Refresh
+            </Button>
+          </Box>
         </Box>
 
         {heading('h-tokens', `Tokens · ${compact(total)}`)}
@@ -245,10 +287,26 @@ export const register: Register = on => {
         {row('t-out', 'output', compact(t.output))}
         {row('t-cr', 'cache read', compact(t.cacheRead))}
         {row('t-cw', 'cache write', compact(t.cacheWrite))}
+        {row('t-hit', 'cache hit', `${Math.round(hit * 100)}%`, hit >= 0.8 ? 'success' : hit >= 0.5 ? 'warning' : 'error')}
+        {row('t-usd', 'estimated cost (API prices)', usd(r.costUsd))}
 
         {heading('h-models', `Models · ${responses} responses`)}
         {r.models.length === 0 && <Text dimColor>none</Text>}
-        {r.models.map(m => row(`m:${m.name}`, m.name, `${m.count} · ${compact(m.tokens)} tok`))}
+        {r.models.map(m => row(`m:${m.name}`, m.name, `${m.count} · ${compact(m.tokens)} tok · ${usd(m.costUsd)}`))}
+
+        {heading('h-top', 'Top sessions')}
+        {r.topSessions.length === 0 && <Text dimColor>none</Text>}
+        {r.topSessions.map((s, i) => (
+          <Box key={`top:${i}`} flexDirection="column">
+            <Text>
+              {i + 1}. {s.name}
+            </Text>
+            <Text dimColor>
+              {'   '}
+              {s.model.replace(/^claude-/, '')} · {compact(s.tokens)} tok · {usd(s.costUsd)}
+            </Text>
+          </Box>
+        ))}
 
         {heading('h-effort', 'Effort')}
         {r.efforts.length === 0 && <Text dimColor>none</Text>}

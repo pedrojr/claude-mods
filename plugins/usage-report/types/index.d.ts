@@ -4,15 +4,36 @@ export type Tokens = { input: number; output: number; cacheRead: number; cacheWr
 /** A name and how many times it showed up. */
 export type Count = { name: string; count: number }
 
-/** Today's usage across every session on this machine. */
+/** One session's share of the period, its subagents included. */
+export type SessionUsage = {
+  /** Its title, else its first prompt, else its folder and id. */
+  name: string
+  /** The model that used most of its tokens. */
+  model: string
+  tokens: number
+  /** Estimated at API list prices. */
+  costUsd: number
+  responses: number
+}
+
+/** The period's usage across every session on this machine. */
 export type Report = {
-  /** Local midnight, epoch ms: the report covers from here to `now`. */
+  /** Local midnight the period starts at, epoch ms: the report covers from here to `now`. */
   dayStart: number
   /** Epoch ms of the last refresh. */
   now: number
+  /** 1 for today, 7 for the last seven days (today included). */
+  days: number
   tokens: Tokens
-  /** API responses per model, most used first, with the model's total tokens. */
-  models: (Count & { tokens: number })[]
+  /**
+   * Estimated cost at API list prices. On a subscription this is not what is
+   * billed; it shows what the same use would cost on the API.
+   */
+  costUsd: number
+  /** The sessions that used the most tokens, at most 5. */
+  topSessions: SessionUsage[]
+  /** API responses per model, most used first, with the model's total tokens and estimated cost. */
+  models: (Count & { tokens: number; costUsd: number })[]
   /** API responses per effort level; `default` when the transcript has none. */
   efforts: Count[]
   tools: {
@@ -45,6 +66,8 @@ export type Snapshot = {
   report: Report | null
   /** True while a refresh runs. */
   loading: boolean
+  /** The period the pane shows: 1 (today) or 7 days. */
+  days: number
 }
 
 declare module 'claude-code' {

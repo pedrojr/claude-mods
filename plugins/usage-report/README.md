@@ -1,19 +1,28 @@
 # usage-report
 
-A pane for Claude Code with today's usage across every session on your machine. Open it with `/report`.
+A pane for Claude Code with today's usage, or the last 7 days', across every session on your machine. Open it with `/report` or `/report week`.
 
 ```
-00:00–15:42                     ↻ Refresh
+today 00:00–15:42        7 days   ↻ Refresh
 
-Tokens · 36M
-input                                540
-output                              211k
-cache read                           35M
-cache write                         776k
+Tokens · 45M
+input                                762
+output                              360k
+cache read                           43M
+cache write                         1.5M
+cache hit                            97%
+estimated cost (API prices)       $24.43
 
-Models · 266 responses
-claude-opus-5-5          254 · 35M tok
-claude-sonnet-5-5        12 · 867k tok
+Models · 373 responses
+claude-opus-5-5     329 · 40M tok · $23.45
+claude-sonnet-5-5   27 · 2.2M tok · $0.92
+claude-haiku-5-5    17 · 2.4M tok · $0.07
+
+Top sessions
+1. Revisão da barra de sessão e componentes
+   opus-5-5 · 19M tok · $7.99
+2. Pontos de melhoria/revisão no projeto ragnar:
+   opus-5-5 · 13M tok · $7.82
 
 Effort
 medium                        266 · 100%
@@ -37,10 +46,13 @@ subagents                              0
 
 ## What it counts
 
-The day starts at local midnight. Everything comes from the transcripts Claude Code writes under `~/.claude/projects/`, so sessions from the desktop app, the terminal and VS Code all count, including ones that never loaded this mod.
+The day starts at local midnight; the 7-day view starts at midnight six days ago. Everything comes from the transcripts Claude Code writes under `~/.claude/projects/`, so sessions from the desktop app, the terminal and VS Code all count, including ones that never loaded this mod.
 
 - **Tokens:** input, output, cache read and cache write, summed from each API response's `usage`. A response split over several transcript lines counts once.
-- **Models:** API responses per model, with that model's total tokens.
+- **Cache hit:** the share of input tokens read from the prompt cache (cache read divided by input, cache read and cache write). Green from 80%, yellow from 50%.
+- **Estimated cost:** each response priced at the first-party API list price of its model (cache writes at the 1-hour rate, twice the input price). On a subscription you are not billed this; it shows what the same use would cost on the API. Models missing from the `PRICES` table in `hooks/stats.ts` count as $0.
+- **Models:** API responses per model, with that model's total tokens and estimated cost.
+- **Top sessions:** the five sessions that used the most tokens, their subagents included. Each one is named by its title, else its first prompt, else its folder. The model shown is the one that used most of its tokens.
 - **Effort:** API responses per effort level (`low`, `medium`, `high`, ...). Responses with no effort recorded show as `default`.
 - **Tool calls:** every call, split into ok, error (the tool failed) and denied (a permission rule, a hook or you refused it). It also lists the five most used tools and the three that failed most. MCP tools show by their own name, without the `mcp__<server>__` prefix.
 - **Retries:** a failed or denied call followed by another call to the same tool. It is a rough count: a second call to the same tool for another reason also counts.
@@ -50,8 +62,8 @@ The day starts at local midnight. Everything comes from the transcripts Claude C
 
 ## Using it
 
-- `/report` reads the transcripts, opens the pane and focuses it. It runs mid-turn.
-- While the pane is open it refreshes every minute and after every turn of this session. `↻ Refresh` (or `r`) refreshes now.
+- `/report` (or `/report today`) reads today's transcripts, opens the pane and focuses it. `/report week` (or `7d`, `semana`) shows the last 7 days. It runs mid-turn.
+- While the pane is open it refreshes every minute and after every turn of this session. `↻ Refresh` (or `r`) refreshes now; `7 days` / `Today` (or `w`) switches the period.
 - Where no pane can be shown, `/report` replies with the same report as plain text.
 
 ## Cost
@@ -76,7 +88,7 @@ None. The constants at the top of `hooks/register.tsx` set the refresh rate (`PO
 ## Limits
 
 - The transcript format is internal to Claude Code and may change in a future version.
-- Tokens are the API's own counts. The mod does not convert them to cost or to plan limits; `usage-bar` shows the plan limits.
+- Tokens are the API's own counts. The cost is an estimate from list prices that can go out of date; `usage-bar` shows the plan limits.
 - Deleted or moved transcripts are not counted.
 
 ## Privacy
