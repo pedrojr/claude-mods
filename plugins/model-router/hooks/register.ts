@@ -8,8 +8,10 @@ import {
   DELEGATION_SECTION,
   ROUTED_AGENT_TYPES,
   classifierPrompt,
+  NO_TASK_REASON,
   estimateTokens,
   isAbsolutePath,
+  isAck,
   label,
   mentionedPaths,
   parseRouteArgs,
@@ -98,6 +100,9 @@ function describeRoute(r: Route | null, p: Verdict | null): string {
     if (p === null) return 'Session: not routed yet. The next prompt picks the model and effort.'
     return `Session: ${label(p)} picked (${p.difficulty}, ${p.reason}); locks at the first model request.`
   }
+  if (r.mode === 'off' && r.reason === NO_TASK_REASON) {
+    return 'Session: the first prompt held no task, so it keeps the session model and effort. /route <model> [effort] sets one.'
+  }
   if (r.mode === 'off') return 'Session: routing off. Requests go out with the session model and effort.'
   const how = r.mode === 'manual' ? 'set by /route' : `${r.difficulty}, ${r.source}: ${r.reason}`
   return `Session: ${label(r)} (${how}; context at start ~${tokenLabel(r.contextTokens)} tokens).`
@@ -161,7 +166,20 @@ export const register: Register = on => {
 
     const usage = await $.session.usage()
     const contextTokens = (usage.context.tokens ?? 0) + estimateTokens(e.text) + (await mentionedTokens($, e.text))
-    const picked = await classify($, 'session', e.text, contextTokens)
+    let task = e.text
+    if (isAck(e.text)) {
+      // "ok", "continue": the task is in what came before (a resumed session), or nowhere.
+      const earlier = await $.session.messages().catch(() => [])
+      const last = [...earlier].reverse().find(m => m.role === 'user' && m.text.trim() !== '' && !isAck(m.text))
+      if (!last) {
+        const keep = verdict('standard', contextTokens, 'rules', NO_TASK_REASON)
+        await update($, pending, () => keep)
+        $.ui.status(undefined)
+        return next(e)
+      }
+      task = last.text
+    }
+    const picked = await classify($, 'session', task, contextTokens)
     await update($, pending, () => picked)
     $.ui.status(`route ${label(picked)}`)
     return next(e)
@@ -178,7 +196,8 @@ export const register: Register = on => {
       if (picked === null) return yield* next(e)
       current = {
         ...picked,
-        mode: 'auto',
+        // A first prompt with no task keeps the session's own model and effort.
+        mode: picked.reason === NO_TASK_REASON ? 'off' : 'auto',
         baseModel: e.model,
         baseEffort: e.effort === undefined ? null : String(e.effort),
         lockedAt: await $.clock.now(),

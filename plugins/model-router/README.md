@@ -4,7 +4,8 @@ Picks the model and effort for a session from its first prompt, then keeps them 
 
 ## How the session is routed
 
-1. When you send the first prompt, the mod rates how hard it is. A short command or a quick question (`git status`, `rode os testes`, `what is the default port?`) is rated by simple rules. Any other prompt goes to Haiku at low effort, which answers with one of four ratings.
+1. When you send the first prompt, the mod rates how hard it is. A short command or a quick question (`git status`, `rode os testes`, `what is the default port?`) is rated by simple rules. Any other prompt goes to Haiku at low effort, which answers with one of four ratings. It rates the hardest single part of the prompt, so a list of ordinary changes counts as standard.
+   - A prompt with no task of its own (`ok`, `sim, pode seguir`, `continue`) is not rated. On a resumed session the mod rates the last real prompt of the conversation instead. On a new session the session keeps its own model and effort, and `/route` says why.
 2. It estimates the starting context: the prompt, the files you mention with `@`, and the conversation so far when you resume one. More than 100k tokens counts as large.
 3. It picks the model and effort:
 
@@ -62,3 +63,4 @@ See the [repository README](../../README.md) for the terminal prompt and desktop
 - `/model` and the built-in status line still show the session's own model. The `route` entry shows the model and effort the requests are sent with.
 - Setting `CLAUDE_CODE_EFFORT_LEVEL` caps the effort the mod can ask for.
 - To change the tiers or the 100k threshold, edit `pick()` and `LARGE_CONTEXT_TOKENS` in `hooks/route.ts`.
+- On a set of 12 labeled prompts (Portuguese, from shell commands to a zero-downtime migration), Haiku with the rubric in `CLASSIFIER_SYSTEM` rated 11 as labeled. The one miss was a list of review items that included a bug with an unknown cause, rated hard instead of standard.

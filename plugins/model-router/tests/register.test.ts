@@ -201,3 +201,38 @@ test('a /clear lets the next prompt route afresh', async ($, on) => {
   expect(calls.classifier).toBe(1)
   expect(sent[1]?.model).toBe('opus')
 })
+
+test('a first prompt with no task keeps the session model instead of locking on haiku', async ($, on) => {
+  const { sent, calls } = engine(on, '{"difficulty":"simple","reason":"just ok"}')
+  on('session.messages', () => ({ value: [] }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+
+  await submit($, 'ok')
+  expect(calls.classifier).toBe(0)
+  await step($)
+  expect(sent[0]).toEqual({ model: 'claude-opus-5-5', effort: 'medium' })
+
+  // The route is settled at the start: a real task later does not switch models.
+  await submit($, 'Refactor the billing module so invoices and refunds share one ledger')
+  expect(calls.classifier).toBe(0)
+  await step($)
+  expect(sent[1]).toEqual({ model: 'claude-opus-5-5', effort: 'medium' })
+  expect((await runRoute($, '')).text).toContain('held no task')
+})
+
+test('"continue" on a resumed session rates the task it was resumed with', async ($, on) => {
+  const { sent, calls } = engine(on, '{"difficulty":"critical","reason":"schema migration"}')
+  on('session.messages', () => ({
+    value: [
+      { role: 'user', text: 'Migrate the orders table to the new schema without downtime', toolUses: [] },
+      { role: 'assistant', text: 'Plan ready.', toolUses: [] },
+      { role: 'user', text: 'ok', toolUses: [] },
+    ],
+  }))
+  await $.session.start({ cwd: '/work', surface: 'terminal', isInteractive: true })
+
+  await submit($, 'continue')
+  expect(calls.classifier).toBe(1)
+  await step($)
+  expect(sent[0]).toEqual({ model: 'opus', effort: 'high' })
+})

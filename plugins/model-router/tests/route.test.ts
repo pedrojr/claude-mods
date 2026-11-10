@@ -2,6 +2,7 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import {
   LARGE_CONTEXT_TOKENS,
+  isAck,
   mentionedPaths,
   parseRouteArgs,
   parseVerdict,
@@ -91,4 +92,9 @@ test('statusText', async () => {
   expect(statusText(route, false)).toBe('route opus/medium')
   expect(statusText(route, true)).toBe('route opus/medium · paused')
   expect(statusText({ ...route, mode: 'off' }, false)).toBe('route off')
+})
+
+test('isAck tells a bare go-ahead from a task', () => {
+  for (const t of ['ok', 'OK!', 'sim, pode seguir', 'continue', 'go ahead', 'Continua por favor']) expect(isAck(t)).toBe(true)
+  for (const t of ['ok, now fix the login bug', 'continue the migration of orders', 'rode os testes', '']) expect(isAck(t)).toBe(false)
 })
