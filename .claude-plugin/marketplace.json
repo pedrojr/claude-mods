@@ -8,7 +8,7 @@
     {
       "name": "model-router",
       "source": "./plugins/model-router",
-      "description": "Picks the model and effort from the first prompt of a session and keeps them for the whole session; gives each subagent its own model and effort by the difficulty of its part."
+      "description": "Picks the model from the first prompt of a session and the effort on each prompt; the model only moves up when a later prompt needs it. Gives each subagent its own model and effort."
     },
     {
       "name": "usage-bar",

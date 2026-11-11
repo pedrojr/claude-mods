@@ -1,7 +1,7 @@
 {
   "name": "model-router",
-  "version": "0.2.1",
-  "description": "Picks the model and effort from the first prompt of a session and keeps them for the whole session; gives each subagent its own model and effort by the difficulty of its part.",
+  "version": "0.3.0",
+  "description": "Picks the model from the first prompt of a session and the effort on each prompt; the model only moves up when a later prompt needs it. Gives each subagent its own model and effort.",
   "license": "MIT",
   "types": "./types/index.d.ts"
 }
