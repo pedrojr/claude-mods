@@ -11,6 +11,28 @@ A collection of mods (plugins) for Claude Code. Each mod lives in its own folder
 | [usage-report](plugins/usage-report) | `/report` opens a pane with today's usage (`/report week` for 7 days) across every session on the machine: tokens, cache hit rate, estimated cost, models, top sessions, effort levels, tool calls (ok, error, denied), retries, API errors, interrupted turns, sessions and subagents. |
 | [model-router](plugins/model-router) | Rates each prompt on two things: how capable the model must be (haiku, sonnet or opus) and how much checking the work needs (effort from low to xhigh). The first prompt locks the model, which only moves up when a later prompt needs it; the effort follows each prompt. A bare `ok` or `continue` is never rated. Subagents get their own model and effort. `/route` shows or overrides the choice, `/route eval` measures the router on 62 labeled prompts, and `/route log` lists your overrides. |
 
+## What they look like
+
+### usage-bar
+
+The line above the prompt: the session and the week with time to reset, the context window fill and the prompt-cache countdown.
+
+![usage-bar above the prompt box](docs/images/usage-bar.png)
+
+### workspace
+
+The side pane with its three sections: Agents, Changes and Diff.
+
+![workspace pane with the Agents, Changes and Diff sections](docs/images/workspace.png)
+
+### usage-report
+
+The pane `/report` opens. The numbers in this picture are made up for the example.
+
+![usage-report pane with example numbers](docs/images/usage-report.png)
+
+model-router has no picture: it shows only a `route <model>/<effort>` entry in the status line and the text of `/route`.
+
 ## Install
 
 Add the marketplace once, then install each mod you want. User scope makes a mod load in every session, desktop app included.
