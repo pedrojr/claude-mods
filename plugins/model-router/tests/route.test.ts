@@ -137,6 +137,9 @@ describe('quickRules', () => {
     expect(quickRules('rode os testes')).toBe('simple')
     expect(quickRules('git status')).toBe('simple')
     expect(quickRules('What is the default port?')).toBe('simple')
+    // A start that ends in an accented letter: `\b` would miss it.
+    expect(quickRules('o que é um hook?')).toBe('simple')
+    expect(quickRules('rodando os testes de novo')).toBe(null)
   })
 
   test('anything else goes to the classifier', async () => {

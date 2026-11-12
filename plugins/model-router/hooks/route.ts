@@ -173,7 +173,7 @@ export function isAbsolutePath(path: string): boolean {
 }
 
 const SIMPLE_START =
-  /^(run|rode|roda|rodar|execute|executa|executar|git|npm|pnpm|yarn|bun|npx|ls|cd|cat|show|mostre|mostra|list|liste|lista|listar|open|abra|abre|commit|push|pull|install|instale|instala|rename|renomeie|renomeia|format|formate|formata|delete|apague|apaga|what is|what's|o que é|qual|quais|where|onde)\b/i
+  /^(run|rode|roda|rodar|execute|executa|executar|git|npm|pnpm|yarn|bun|npx|ls|cd|cat|show|mostre|mostra|list|liste|lista|listar|open|abra|abre|commit|push|pull|install|instale|instala|rename|renomeie|renomeia|format|formate|formata|delete|apague|apaga|what is|what's|o que é|qual|quais|where|onde)(?![\p{L}\p{N}_])/iu
 
 const HARD_HINT =
   /(arquitetur|architect|refator|refactor|migra|investig|debug|depur|race condition|concorr|concurren|seguran|security|vulnerab|deadlock|memory leak|vazamento|desempenho|performance|design|redesign|reescrev|rewrite)/i
