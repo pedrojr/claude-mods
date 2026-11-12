@@ -71,6 +71,19 @@ test('a long diff is cut at a hunk boundary', () => {
   expect(parsed.isTruncated).toBe(true)
   expect(parsed.hunks.length).toBeLessThanOrEqual(MAX_CHARS)
   expect(parsed.hunks.split('\n').at(-1)?.startsWith('+')).toBe(true)
+  // The counts cover only the hunks kept.
+  expect(parsed.added).toBe(parsed.hunks.split('\n').filter(l => l.startsWith('+')).length)
+})
+
+test('a new file too long for one hunk keeps its start, with a header that matches', () => {
+  const body = Array.from({ length: 5000 }, (_, i) => `+line ${i} ${'x'.repeat(40)}`)
+  const parsed = parseDiff(['diff --git a/big.txt b/big.txt', '--- /dev/null', '+++ b/big.txt', '@@ -0,0 +1,5000 @@', ...body].join('\n'))
+  expect(parsed.isTruncated).toBe(true)
+  const kept = parsed.hunks.split('\n')
+  expect(kept.length).toBeGreaterThan(1)
+  expect(parsed.hunks.length).toBeLessThanOrEqual(MAX_CHARS)
+  expect(kept[0]).toBe(`@@ -0,0 +1,${kept.length - 1} @@`)
+  expect(parsed.added).toBe(kept.length - 1)
 })
 
 test('diffArgv picks the side', () => {

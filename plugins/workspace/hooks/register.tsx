@@ -40,6 +40,8 @@ const ignore = (): void => {}
 
 // The poll timer; a reload drops it with the module, and the next refresh starts it again.
 let poller: { cancel: () => void } | null = null
+// True while a tick's refresh runs.
+let isPolling = false
 
 // Each value is written only when it changed, so an idle poll redraws nothing.
 const same = (a: unknown, b: unknown): boolean => JSON.stringify(a) === JSON.stringify(b)
@@ -69,7 +71,18 @@ async function refreshChanges($: Engine): Promise<void> {
 async function refresh($: Engine, withGit = false): Promise<void> {
   const { isOpen } = await read($, pane)
   await Promise.all([refreshAgents($), isOpen || withGit ? refreshChanges($) : null])
-  if (!poller) poller = $.clock.every(POLL_MS, () => refresh($).catch(ignore))
+  if (!poller) {
+    poller = $.clock.every(POLL_MS, () => {
+      // A slow read (a large repository, many transcripts) skips the ticks that come during it, so they do not pile up.
+      if (isPolling) return
+      isPolling = true
+      void refresh($)
+        .catch(ignore)
+        .finally(() => {
+          isPolling = false
+        })
+    })
+  }
 }
 
 /** Opens the pane; `asked` is true when the person's own command or press asks for it. */
@@ -189,11 +202,16 @@ export const register: Register = on => {
       otherSessions > 0 ? `${otherSessions} other session${otherSessions === 1 ? '' : 's'} active` : null,
       running > 0 ? `${running} agent${running === 1 ? '' : 's'} running` : null,
     ].filter(Boolean)
+    // What the plugins beneath drew (usage-bar's line) stays, above the chip.
+    const below = await next(e)
     return (
-      <Box flexDirection="row">
-        <Text color="success">●</Text>
-        <Text dimColor> {parts.join(' · ')} </Text>
-        <Button key="open-workspace" label="Workspace" onPress={() => openPane($, true).catch(ignore)} />
+      <Box flexDirection="column">
+        {below}
+        <Box flexDirection="row">
+          <Text color="success">●</Text>
+          <Text dimColor> {parts.join(' · ')} </Text>
+          <Button key="open-workspace" label="Workspace" onPress={() => openPane($, true).catch(ignore)} />
+        </Box>
       </Box>
     )
   })

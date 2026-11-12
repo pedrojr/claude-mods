@@ -213,8 +213,11 @@ export function vscodeLink(sessionId: string): string | null {
 export function vscodeArgvs(cwd: string, link: string, isWindows: boolean): string[][] {
   // `code` is a .cmd script on Windows, run through cmd.
   const code = isWindows ? ['cmd', '/d', '/c', 'code'] : ['code']
+  // cmd reads `&`, `|`, `<`, `>`, `^`, `%`, `!` and quotes in a folder name ("R&D") as its own
+  // syntax: such a folder is not focused first, and the link alone opens the session.
+  const isSafe = cwd !== '' && !(isWindows && /[&|<>^%!"]/.test(cwd))
   return [
-    ...(cwd ? [[...code, cwd]] : []),
+    ...(isSafe ? [[...code, cwd]] : []),
     [...code, '--open-url', link],
   ]
 }

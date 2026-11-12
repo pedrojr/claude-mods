@@ -26,6 +26,14 @@ export type Parsed = {
   isCombined: boolean
 }
 
+/** A hunk's header rewritten to count only the lines kept after it: `@@ -1,900 +1,900 @@` → `@@ -1,40 +1,40 @@`. */
+function recount(hunk: readonly string[]): string {
+  const body = hunk.slice(1)
+  const old = body.filter(line => line.startsWith(' ') || line.startsWith('-')).length
+  const now = body.filter(line => line.startsWith(' ') || line.startsWith('+')).length
+  return hunk[0]!.replace(/^@@ -(\d+)(?:,\d+)? \+(\d+)(?:,\d+)? @@/, (_, a: string, b: string) => `@@ -${a},${old} +${b},${now} @@`)
+}
+
 /** Reads git's diff output: drops the file header, counts lines, clips long diffs. */
 export function parseDiff(stdout: string): Parsed {
   const lines = stdout.replace(/\r\n/g, '\n').split('\n')
@@ -35,9 +43,9 @@ export function parseDiff(stdout: string): Parsed {
   const isCombined = lines[first]!.startsWith('@@@')
   const kept: string[] = []
   let size = 0
-  let added = 0
-  let removed = 0
   let isTruncated = false
+  // Where the hunk being read starts in `kept`.
+  let hunkAt = 0
   for (let i = first; i < lines.length; i++) {
     const line = lines[i]!
     // A second file's header: stop there.
@@ -47,18 +55,31 @@ export function parseDiff(stdout: string): Parsed {
       break
     }
     if (size + line.length + 1 > MAX_CHARS) {
-      // A hunk cut in the middle does not parse: drop it whole.
-      while (kept.length && !kept[kept.length - 1]!.startsWith('@@')) kept.pop()
-      kept.pop()
       isTruncated = true
+      if (hunkAt > 0) {
+        // A hunk cut in the middle does not parse: drop it whole.
+        kept.length = hunkAt
+      } else if (!isCombined) {
+        // The first hunk alone is too long (a large new file): keep its start, its header counting what is kept.
+        kept[0] = recount(kept)
+      }
       break
     }
-    if (!isCombined && line.startsWith('+')) added++
-    if (!isCombined && line.startsWith('-')) removed++
+    if (line.startsWith('@@')) hunkAt = kept.length
     kept.push(line)
     size += line.length + 1
   }
   while (kept.length && kept[kept.length - 1] === '') kept.pop()
+  // Counted from what is kept, so a hunk dropped above adds nothing.
+  let added = 0
+  let removed = 0
+  if (!isCombined) {
+    for (const line of kept) {
+      if (line.startsWith('@@')) continue
+      if (line.startsWith('+')) added++
+      else if (line.startsWith('-')) removed++
+    }
+  }
   // Tabs and newlines are the only control characters the element takes.
   const hunks = kept.join('\n').replace(/[\u0000-\u0008\u000b-\u001f\u007f]/g, '')
   return { hunks, added, removed, isBinary, isTruncated, isCombined }

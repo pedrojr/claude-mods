@@ -155,4 +155,13 @@ describe('VS Code sessions', () => {
     ])
     expect(vscodeArgvs('', link, false)).toEqual([['code', '--open-url', link]])
   })
+
+  test('a folder name cmd would read as syntax is not passed to cmd', () => {
+    const link = vscodeLink(id)!
+    expect(vscodeArgvs('d:\\R&D', link, true)).toEqual([['cmd', '/d', '/c', 'code', '--open-url', link]])
+    expect(vscodeArgvs('/home/me/R&D', link, false)).toEqual([
+      ['code', '/home/me/R&D'],
+      ['code', '--open-url', link],
+    ])
+  })
 })

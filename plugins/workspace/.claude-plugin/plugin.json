@@ -1,6 +1,6 @@
 {
   "name": "workspace",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "description": "One side pane for the session's work: the active agents and sessions on top, the repository's changed files below, and the diff of the file you click at the bottom.",
   "license": "MIT",
   "types": "./types/index.d.ts"
