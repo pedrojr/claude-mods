@@ -1,0 +1,7 @@
+{
+  "name": "usage-advisor",
+  "version": "0.1.0",
+  "description": "Watches how the session spends tokens and shows an icon with the tip count at the end of usage-bar's line. A click, or /advisor, opens an audit: the context a session starts with, the last 10 sessions of the project, a diagnosis, changes to approve one at a time and the three habits that save the most.",
+  "license": "MIT",
+  "types": "./types/index.d.ts"
+}

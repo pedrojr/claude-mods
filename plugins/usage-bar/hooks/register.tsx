@@ -3,6 +3,9 @@ import type { EngineInterface as Engine, Register, SessionRateLimit } from 'clau
 
 import type { Cache, Lang, Meter, Window, Windows } from '../types'
 
+// What usage-advisor publishes for the icon at the end of the line; absent when it is not installed.
+const advisorIcon = { plugin: 'usage-advisor', key: 'icon' } as const
+
 // Change the tag when Windows' fields change: it drops what an earlier version stored.
 const windows = atom(
   { plugin: 'usage-bar', key: 'windows' } as const,
@@ -324,7 +327,7 @@ export const register: Register = on => {
       return next(e)
     }
 
-    const { Box, Text } = $.ui.resolve(e)
+    const { Box, Text, Button } = $.ui.resolve(e)
     const labels = LABELS[l]
     // "(8min)" after the percent; `extra` (the session cost) follows the reset time.
     const tailOf = (w: Window, extra: string | null = null) => {
@@ -393,13 +396,40 @@ export const register: Register = on => {
     ) : null
     const cacheItem = cacheBody ? [sep('sep2'), cacheBody] : null
 
-    return (
-      <Box flexDirection="row" flexWrap="wrap" columnGap={1}>
+    //   " │ ◆ 2": usage-advisor's tips for the session (◇ when none); a press runs /advisor.
+    const advisor = (await $.state.get(advisorIcon)).value
+    const advisorItem =
+      advisor && !advisor.isHidden
+        ? [
+            sep('sep3'),
+            <Button
+              key="open-advisor"
+              label="Advisor"
+              plain
+              dimColor={advisor.count === 0}
+              onPress={() => void $.command.run({ command: 'advisor' }).catch(() => {})}
+            >
+              {advisor.count > 0 ? `◆ ${advisor.count}` : '◇'}
+            </Button>,
+          ]
+        : null
+
+    const line = (
+      <Box key="usage-bar-line" flexDirection="row" flexWrap="wrap" columnGap={1}>
         {item('session', labels.session, value.session, sessionTail, cost)}
         {sep('sep')}
         {item('week', labels.week, value.week, weekTail, null)}
         {contextItem}
         {cacheItem}
+        {advisorItem}
+      </Box>
+    )
+    // What the plugins beneath drew (workspace's chip) stays, under the line.
+    const below = await next(e)
+    return (
+      <Box flexDirection="column">
+        {line}
+        {below}
       </Box>
     )
   })

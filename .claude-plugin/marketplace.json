@@ -13,7 +13,7 @@
     {
       "name": "usage-bar",
       "source": "./plugins/usage-bar",
-      "description": "Compact one-line usage: session and week with percent, bar and time to reset, context fill, session cost and a prompt-cache countdown."
+      "description": "Compact one-line usage: session and week with percent, progress ring and time to reset, context fill, session cost and a prompt-cache countdown."
     },
     {
       "name": "workspace",
@@ -24,6 +24,11 @@
       "name": "usage-report",
       "source": "./plugins/usage-report",
       "description": "Usage across every session on the machine, today or the last 7 days: tokens, cache hit, estimated cost, models, top sessions, tool calls ok and failed, retries, API errors. Open it with /report."
+    },
+    {
+      "name": "usage-advisor",
+      "source": "./plugins/usage-advisor",
+      "description": "Watches how a session spends tokens and shows an icon with the tip count at the end of usage-bar's line. A click, or /advisor, opens an audit of the project: preload, last 10 sessions, diagnosis, changes to approve one at a time, and habits."
     }
   ]
 }

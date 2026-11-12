@@ -23,5 +23,7 @@ export type Lang = 'en' | 'pt' | 'es'
 declare module 'claude-code' {
   interface PluginState {
     'usage-bar': { windows: Windows; cache: Cache; lang: Lang; meter: Meter }
+    /** Read only: the icon usage-advisor publishes, drawn at the end of the line. */
+    'usage-advisor': { icon: { count: number; isHidden: boolean } }
   }
 }

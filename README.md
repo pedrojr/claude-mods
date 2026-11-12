@@ -6,10 +6,11 @@ A collection of mods (plugins) for Claude Code. Each mod lives in its own folder
 
 | Mod | What it does |
 | --- | --- |
-| [usage-bar](plugins/usage-bar) | One-line usage meter above the prompt: current session and this week, with percent, bar and time to reset, the context window fill, the session cost and a prompt-cache countdown. Updates every minute and follows what other sessions spend. |
+| [usage-bar](plugins/usage-bar) | One-line usage meter above the prompt: current session and this week, with percent, progress ring and time to reset, the context window fill, the session cost and a prompt-cache countdown. Updates every minute and follows what other sessions spend. |
 | [workspace](plugins/workspace) | One side pane in three framed sections, each in its own light color. Agents: this session and every session or agent running on the machine (desktop, terminal, VS Code), with what each is doing; idle ones hide behind `+N idle`, and clicking a title opens it. Changes: the repository's changed files grouped as in VS Code (Conflicts, Staged, Not staged) with their status letters. Diff: the file you click in Changes, with line numbers, added and removed lines and syntax colors. Each section folds to its title line. Opens by itself in the desktop app; `/workspace` or the chip above the prompt opens it anywhere. |
 | [usage-report](plugins/usage-report) | `/report` opens a pane with today's usage (`/report week` for 7 days) across every session on the machine: tokens, cache hit rate, estimated cost, models, top sessions, effort levels, tool calls (ok, error, denied), retries, API errors, interrupted turns, sessions and subagents. |
 | [model-router](plugins/model-router) | Rates each prompt on two things: how capable the model must be (haiku, sonnet or opus) and how much checking the work needs (effort from low to xhigh). The first prompt locks the model, which only moves up when a later prompt needs it; the effort follows each prompt. A bare `ok` or `continue` is never rated. Subagents get their own model and effort. `/route` shows or overrides the choice, `/route eval` measures the router on 62 labeled prompts, and `/route log` lists your overrides. |
+| [usage-advisor](plugins/usage-advisor) | Watches how the session spends tokens: whole files read again, large tool outputs, context fill, cold cache after a pause, model switches, and the preload. An icon at the end of usage-bar's line shows how many tips the session calls for; a click opens the audit. `/advisor` opens a pane with an audit of the project: what loads before the first prompt, the last 10 sessions, a diagnosis ranked by impact, changes to approve one at a time, and the three habits that would save the most. Each figure is marked measured, estimated or unavailable. |
 
 ## What they look like
 
@@ -31,7 +32,7 @@ The pane `/report` opens. The numbers in this picture are made up for the exampl
 
 ![usage-report pane with example numbers](docs/images/usage-report.png)
 
-model-router has no picture: it shows only a `route <model>/<effort>` entry in the status line and the text of `/route`.
+model-router has no picture: it shows only a `route <model>/<effort>` entry in the status line and the text of `/route`. usage-advisor has no picture yet: its icon sits at the end of usage-bar's line.
 
 ## Install
 
@@ -45,6 +46,7 @@ claude plugin install usage-bar@claude-mods --scope user
 claude plugin install workspace@claude-mods --scope user
 claude plugin install usage-report@claude-mods --scope user
 claude plugin install model-router@claude-mods --scope user
+claude plugin install usage-advisor@claude-mods --scope user
 ```
 
 At the prompt of a Claude Code terminal session:
