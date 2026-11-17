@@ -1,6 +1,6 @@
 # usage-advisor
 
-Watches how a session spends tokens and shows an `A` icon at the end of usage-bar's line, yellow when the session calls for tips. A click on the `A`, or `/advisor`, opens a pane and runs an audit of the project: what each session loads before your first prompt, the last 10 sessions, a diagnosis ranked by impact, changes you can approve one at a time, and the three habits that would save you the most.
+Watches how a session spends tokens and shows a light orange `A` at the end of usage-bar's line, dimmed when the session calls for no tip. A click on the `A`, or `/advisor`, opens a pane and runs an audit of the project: what each session loads before your first prompt, the last 10 sessions, a diagnosis ranked by impact, changes you can approve one at a time, and the three habits that would save you the most.
 
 The mod only reads. It changes no file, setting, MCP server, hook, skill or agent.
 
@@ -10,7 +10,7 @@ The mod only reads. It changes no file, setting, MCP server, hook, skill or agen
 
 ![usage-bar's line with the A at the end](../../docs/images/usage-bar.png)
 
-The `A` is yellow when the session calls for at least one tip and gray when it calls for none. Its accessible name is `usage-advisor`. A click on it opens the Advisor pane and runs the audit. The tips are listed at the top of the pane's Audit tab, the one that saves the most first, and `/advisor tips` lists them as text. The mod counts as the session runs:
+The `A` is light orange, at full strength when the session calls for at least one tip and dimmed when it calls for none. A click on it opens the Advisor pane and runs the audit. The tips are listed at the top of the pane's Audit tab, the one that saves the most first, and `/advisor tips` lists them as text. The mod counts as the session runs:
 
 | Tip | When |
 | --- | --- |

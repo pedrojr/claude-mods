@@ -15,7 +15,7 @@ A compact, one-line usage meter for Claude Code. It draws above the prompt, in t
   - `◷ ~61k` once it has likely expired: your next message will re-cache about that many tokens.
   - On a resumed session it starts from the engine's own idle time and token count.
 - The line is always in English, whatever language you write in.
-- With usage-advisor installed, an `A` icon closes the line. It is gray when the session calls for no tip and yellow when it does; a click runs `/advisor`. Its accessible name is `usage-advisor`.
+- With usage-advisor installed, an `A` icon closes the line. It is light orange, a little smaller than the rest of the line, and dimmed when the session calls for no tip; a click runs `/advisor`.
 - The line stays hidden until Claude Code reports the rate limits, which happens after the first response of a session.
 - Collapse it with `ctrl+x ctrl+a` or the `[-]` beside it.
 

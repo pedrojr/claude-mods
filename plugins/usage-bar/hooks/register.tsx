@@ -5,6 +5,8 @@ import type { Cache, Meter, Window, Windows } from '../types'
 
 // What usage-advisor publishes for the icon at the end of the line; absent when it is not installed.
 const advisorIcon = { plugin: 'usage-advisor', key: 'icon' } as const
+// The A's color: a light orange, dimmed by the Button when the session calls for no tip.
+const ADVISOR_ORANGE = '#F5A65B'
 
 // Change the tag when Windows' fields change: it drops what an earlier version stored.
 const windows = atom(
@@ -352,6 +354,7 @@ export const register: Register = on => {
     const cacheItem = cacheBody ? [sep('sep2'), cacheBody] : null
 
     //   " │ A": usage-advisor's icon as a button with the default chrome, dim when the session calls for no tip; a press runs /advisor.
+    // No `label`: the desktop's native button draws the label instead of the children, so the `A` would not show.
     const advisor = (await $.state.get(advisorIcon)).value
     const advisorItem =
       advisor && !advisor.isHidden
@@ -359,11 +362,12 @@ export const register: Register = on => {
             sep('sep3'),
             <Button
               key="open-advisor"
-              label="usage-advisor"
               dimColor={advisor.count === 0}
               onPress={() => void $.command.run({ command: 'advisor' }).catch(() => {})}
             >
-              <Text color={advisor.count > 0 ? 'warning' : undefined}>A</Text>
+              <Text color={ADVISOR_ORANGE} size="footnote">
+                A
+              </Text>
             </Button>,
           ]
         : null

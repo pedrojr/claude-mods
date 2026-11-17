@@ -43,7 +43,8 @@ test("the advisor's icon ends the line, a press runs /advisor, and the chip bene
   expect(tree.indexOf('◷')).toBeLessThan(tree.indexOf('open-advisor'))
   expect(tree.indexOf('open-advisor')).toBeLessThan(tree.indexOf('chip'))
   expect((await band.find({ type: 'Button', key: 'open-advisor' }))?.text).toBe('A')
-  expect(tree).toContain('usage-advisor')
+  // A label would replace the `A` on the desktop's native button.
+  expect(tree).not.toContain('usage-advisor')
 
   await band.press({ key: 'open-advisor' })
   expect(ran).toEqual(['advisor'])

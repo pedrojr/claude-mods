@@ -28,7 +28,7 @@
     {
       "name": "usage-advisor",
       "source": "./plugins/usage-advisor",
-      "description": "Watches how a session spends tokens and shows an `A` at the end of usage-bar's line, yellow when tips apply. A click, or /advisor, opens an audit of the project: preload, last 10 sessions, diagnosis, changes to approve one at a time, and habits."
+      "description": "Watches how a session spends tokens and shows an `A` at the end of usage-bar's line, light orange and dimmed when no tip applies. A click, or /advisor, opens an audit of the project: preload, last 10 sessions, diagnosis, changes to approve one at a time, and habits."
     }
   ]
 }
