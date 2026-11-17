@@ -25,7 +25,6 @@ import {
   WARM_CONTEXT_TOKENS,
   calmText,
   describeCall,
-  detectLang,
   emptyLive,
   estimateTokens,
   isFullRead,
@@ -33,6 +32,7 @@ import {
   shortModel,
   tokenLabel,
 } from './live'
+import { langOf, osLang } from './oslang'
 
 // Change a tag when that value's fields change: it declines what an earlier
 // version stored, which outlives a reload.
@@ -50,12 +50,11 @@ const isHidden = atom({ plugin: 'usage-advisor', key: 'isHidden' } as const, fal
  */
 // Plain, with no shape tag: another plugin reads it as is. Keep its fields as they are.
 const icon = atom({ plugin: 'usage-advisor', key: 'icon' } as const, { count: 0, isHidden: false } as Icon)
-/** Whether `lang` was read from the chat; until then it is the app's language. */
-const isChatLang = atom({ plugin: 'usage-advisor', key: 'isChatLang' } as const, false)
 
 const COMMAND = 'advisor'
 const PANE = 'usage-advisor'
 const STORE_HIDDEN = 'isHidden'
+const STORE_LANG = 'lang'
 // `$.fs.read` takes files up to 4 MiB; larger transcripts are streamed through the OS.
 const MAX_READ_BYTES = 4 * 1024 * 1024 - 1
 const DOCK_COLUMNS = 60
@@ -252,7 +251,8 @@ async function readSessions($: Engine): Promise<{ sessions: SessionRow[]; note: 
 function runAudit($: Engine, detail: 'summary' | 'full'): Promise<void> {
   if (running && (detail === 'summary' || running.detail === 'full')) return running.run
   const before = running?.run ?? Promise.resolve()
-  const run: Promise<void> = (async () => {
+  let run: Promise<void> | null = null
+  run = (async (): Promise<void> => {
     await before.catch(ignore)
     await update($, pane, p => ({ ...p, loading: true }))
     try {
@@ -318,55 +318,10 @@ async function fill($: Engine, text: string, l: Lang): Promise<void> {
   $.ui.toast(done.isFilled ? T[l].filled : T[l].notFilled)
 }
 
-/** Follows the language of the chat: each prompt that reads as one language sets it. */
-async function setLang($: Engine, text: string): Promise<void> {
-  const detected = detectLang(text)
-  if (detected === null) return
-  if (detected !== (await read($, lang))) await update($, lang, () => detected)
-  if (!(await read($, isChatLang))) await update($, isChatLang, () => true)
-}
-
-const langOf = (value: unknown): Lang | null =>
-  typeof value !== 'string' ? null : /^(pt|portugu)/i.test(value.trim()) ? 'pt' : /^(en|engl)/i.test(value.trim()) ? 'en' : null
-
-/**
- * The app's language, for a session with no chat yet: the response language
- * set in Claude Code's settings, VS Code's display language, the locale
- * variables, then Windows' display language.
- */
-async function appLang($: Engine): Promise<Lang> {
-  const fromSettings = langOf(await $.settings.read({ key: 'language' }).catch(() => undefined))
-  if (fromSettings) return fromSettings
-  const nls = await $.env.get('VSCODE_NLS_CONFIG')
-  if (nls) {
-    try {
-      const parsed = JSON.parse(nls) as { resolvedLanguage?: string; userLocale?: string }
-      const fromVsCode = langOf(parsed.resolvedLanguage) ?? langOf(parsed.userLocale)
-      if (fromVsCode) return fromVsCode
-    } catch {
-      // Unreadable: the next source decides.
-    }
-  }
-  const fromEnv = langOf(await $.env.get('LC_ALL')) ?? langOf(await $.env.get('LC_MESSAGES')) ?? langOf(await $.env.get('LANG'))
-  if (fromEnv) return fromEnv
-  if ((await $.env.get('OS')) === 'Windows_NT') {
-    let out = ''
-    try {
-      for await (const { stream, text } of $.process.spawn({ argv: ['powershell', '-NoProfile', '-Command', '(Get-UICulture).Name'] })) {
-        if (stream === 'stdout') out += text
-      }
-    } catch {
-      // No PowerShell: English.
-    }
-    return langOf(out) ?? 'en'
-  }
-  return 'en'
-}
-
 /** Opens the pane and runs the audit in the background. */
 async function openAdvisor($: Engine, detail: 'summary' | 'full'): Promise<boolean> {
   const t = T[await read($, lang)]
-  await update($, pane, p => ({ ...p, isOpen: true, tab: 'audit', proposal: 0 }))
+  await update($, pane, p => ({ ...p, isOpen: true, tab: 'audit' as const, proposal: 0 }))
   const opened = await $.ui.open({ id: PANE, title: t.title, columns: DOCK_COLUMNS, focus: true }).catch(() => null)
   void runAudit($, detail).catch(ignore)
   return opened?.isPlaced ?? false
@@ -382,19 +337,15 @@ export const register: Register = on => {
     })
     if ((await $.store.get(STORE_HIDDEN)) === true) await update($, isHidden, () => true)
     await syncIcon($)
-    if (!(await read($, isChatLang))) {
-      // A resumed session has a chat already: its last prompts decide. Otherwise the app's language.
-      const earlier = await $.session.messages().catch(() => [])
-      const typed = earlier.filter(m => m.role === 'user').slice(-5).map(m => m.text).join('\n')
-      const fromChat = detectLang(typed)
-      if (fromChat) {
-        await update($, lang, () => fromChat)
-        await update($, isChatLang, () => true)
-      } else {
-        const fromApp = await appLang($).catch(() => 'en' as Lang)
-        if (!(await read($, isChatLang))) await update($, lang, () => fromApp)
-      }
-    }
+    // The last language read starts the session; the OS is asked again in the background.
+    const saved = langOf(await $.store.get(STORE_LANG).catch(() => undefined))
+    if (saved) await update($, lang, () => saved)
+    void osLang($)
+      .then(async found => {
+        if (found !== (await read($, lang))) await update($, lang, () => found)
+        if (found !== saved) await $.store.set(STORE_LANG, found)
+      })
+      .catch(ignore)
     return next(e)
   })
 
@@ -407,7 +358,6 @@ export const register: Register = on => {
   on('prompt.submit', async ($, e, next) => {
     if (e.isMeta || e.command !== undefined || e.text.trim() === '') return next(e)
     try {
-      await setLang($, e.text)
       const now = await $.clock.now()
       await updateLive($, s => {
         const idle = s.lastResponseAt === null ? 0 : now - s.lastResponseAt

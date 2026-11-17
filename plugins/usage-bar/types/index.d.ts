@@ -17,12 +17,9 @@ export type Cache = {
 /** This session's own figures: the context window's fill and what the session cost. */
 export type Meter = { contextTokens: number | null; contextWindow: number | null; costUsd: number | null }
 
-/** The language the labels are drawn in, detected from the person's prompts. */
-export type Lang = 'en' | 'pt' | 'es'
-
 declare module 'claude-code' {
   interface PluginState {
-    'usage-bar': { windows: Windows; cache: Cache; lang: Lang; meter: Meter }
+    'usage-bar': { windows: Shaped<Windows>; cache: Cache; meter: Meter }
     /** Read only: the icon usage-advisor publishes, drawn at the end of the line. */
     'usage-advisor': { icon: { count: number; isHidden: boolean } }
   }

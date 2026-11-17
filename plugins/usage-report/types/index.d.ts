@@ -1,3 +1,6 @@
+/** The language of the pane and replies: the operating system's, English when it has no translation. */
+export type Lang = 'en' | 'pt'
+
 /** Token counts as the API reports them. */
 export type Tokens = { input: number; output: number; cacheRead: number; cacheWrite: number }
 
@@ -72,6 +75,10 @@ export type Snapshot = {
 
 declare module 'claude-code' {
   interface PluginState {
-    'usage-report': { snapshot: Shaped<Snapshot> }
+    'usage-report': {
+      snapshot: Shaped<Snapshot>
+      /** The operating system's language, read when the session starts. */
+      lang: Lang
+    }
   }
 }

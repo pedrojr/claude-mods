@@ -3,7 +3,8 @@
 //   <config>/projects/<slug>/<sessionId>/subagents/agent-<id>.jsonl     its subagents
 //   <config>/projects/<slug>/<sessionId>/subagents/agent-<id>.meta.json
 
-import type { Count, Report, SessionUsage, Tokens } from '../types'
+import type { Count, Lang, Report, SessionUsage, Tokens } from '../types'
+import { T } from './i18n'
 
 /** One API response, counted once even when its blocks span several lines. */
 export type MessageRow = { model: string; effort: string | null; tokens: Tokens; at: number }
@@ -375,22 +376,24 @@ export function compact(n: number): string {
 export const percent = (part: number, whole: number): string => (whole > 0 ? `${Math.round((part / whole) * 100)}%` : '0%')
 
 /** The report as plain lines, for the command's reply and surfaces without the pane. */
-export function reportText(r: Report): string {
+export function reportText(r: Report, lang: Lang = 'en'): string {
   const t = r.tokens
+  const w = T[lang]
+  const none = w.empty
   const lines = [
-    r.days === 1 ? `Usage today` : `Usage, last ${r.days} days`,
-    `Tokens: ${compact(totalOf(t))} (input ${compact(t.input)} · output ${compact(t.output)} · cache read ${compact(t.cacheRead)} · cache write ${compact(t.cacheWrite)})`,
-    `Cache hit: ${percent(t.cacheRead, t.input + t.cacheRead + t.cacheWrite)} of input read from the cache`,
-    `Estimated cost at API prices: ${usd(r.costUsd)}`,
-    `Models: ${r.models.map(m => `${m.name} ${m.count} (${compact(m.tokens)} tok, ${usd(m.costUsd)})`).join(' · ') || 'none'}`,
+    r.days === 1 ? w.headToday : w.headDays(r.days),
+    `${w.tokens}: ${compact(totalOf(t))} (${w.input} ${compact(t.input)} · ${w.output} ${compact(t.output)} · ${w.cacheRead} ${compact(t.cacheRead)} · ${w.cacheWrite} ${compact(t.cacheWrite)})`,
+    w.textCacheHit(percent(t.cacheRead, t.input + t.cacheRead + t.cacheWrite)),
+    `${w.textCost}: ${usd(r.costUsd)}`,
+    `${w.models}: ${r.models.map(m => `${m.name} ${m.count} (${compact(m.tokens)} tok, ${usd(m.costUsd)})`).join(' · ') || none}`,
     ...(r.topSessions.length
-      ? ['Top sessions:', ...r.topSessions.map((s, i) => `  ${i + 1}. ${s.name} · ${s.model} · ${compact(s.tokens)} tok · ${usd(s.costUsd)}`)]
+      ? [`${w.topSessions}:`, ...r.topSessions.map((s, i) => `  ${i + 1}. ${s.name} · ${s.model} · ${compact(s.tokens)} tok · ${usd(s.costUsd)}`)]
       : []),
-    `Effort: ${r.efforts.map(e => `${e.name} ${e.count}`).join(' · ') || 'none'}`,
-    `Tool calls: ${r.tools.total} · ok ${r.tools.ok} · error ${r.tools.errors} · denied ${r.tools.denied}`,
-    `Retries ${r.retries} · API errors ${r.apiErrors} · interrupted ${r.interrupts}`,
-    `Sessions ${r.sessions} · subagents ${r.agents.total}${r.agents.byType.length ? ` (${r.agents.byType.map(a => `${a.name} ${a.count}`).join(', ')})` : ''}`,
+    `${w.effort}: ${r.efforts.map(e => `${e.name} ${e.count}`).join(' · ') || none}`,
+    `${w.toolCalls}: ${r.tools.total} · ${w.ok} ${r.tools.ok} · ${w.error} ${r.tools.errors} · ${w.denied} ${r.tools.denied}`,
+    `${w.textRetries} ${r.retries} · ${w.apiErrors} ${r.apiErrors} · ${w.textInterrupted} ${r.interrupts}`,
+    `${w.sessions} ${r.sessions} · ${w.subagents} ${r.agents.total}${r.agents.byType.length ? ` (${r.agents.byType.map(a => `${a.name} ${a.count}`).join(', ')})` : ''}`,
   ]
-  if (r.skipped > 0) lines.push(`${r.skipped} transcript(s) could not be read.`)
+  if (r.skipped > 0) lines.push(w.skipped(r.skipped))
   return lines.join('\n')
 }

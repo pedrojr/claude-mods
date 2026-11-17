@@ -2,6 +2,8 @@
 
 A pane for Claude Code with today's usage, or the last 7 days', across every session on your machine. Open it with `/report` or `/report week`.
 
+![usage-report pane](../../docs/images/usage-report.png)
+
 ```
 today 00:00–15:42        7 days   ↻ Refresh
 
@@ -65,6 +67,7 @@ The day starts at local midnight; the 7-day view starts at midnight six days ago
 - `/report` (or `/report today`) reads today's transcripts, opens the pane and focuses it. `/report week` (or `7d`, `semana`) shows the last 7 days. It runs mid-turn.
 - While the pane is open it refreshes every minute and after every turn of this session. `↻ Refresh` (or `r`) refreshes now; `7 days` / `Today` (or `w`) switches the period.
 - Where no pane can be shown, `/report` replies with the same report as plain text.
+- The pane and the replies follow the operating system's display language: Windows' UI language, the first language in macOS's preferences, or `LC_ALL`, `LC_MESSAGES` or `LANG` elsewhere. Portuguese and English are translated; any other language shows English. A new session starts with the language the last one read, and the OS is read again in the background.
 
 ## Cost
 

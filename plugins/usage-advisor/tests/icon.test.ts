@@ -37,12 +37,11 @@ test('the icon state counts the tips, and /advisor hide hides it', async ($, on)
   expect(seen.at(-1)).toEqual({ count: 1, isHidden: true })
 })
 
-test('with no chat yet the advisor follows the app language, then the chat', async ($, on) => {
-  engine(on, { VSCODE_NLS_CONFIG: '{"resolvedLanguage":"pt-br"}' })
+test("the advisor speaks the operating system's language, whatever the chat's", async ($, on) => {
+  engine(on, { OS: 'Windows_NT' })
+  on('process.run', () => ({ value: { exitCode: 0, stdout: 'pt-BR\r\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  await $.prompt.submit({ text: 'please add the tests for this module and the other one', wait: false, origin: { kind: 'composer' } })
   // An unknown argument answers the usage line, in the language in force.
   expect((await run($, '?')).text).toMatch(/^Uso:/)
-
-  await $.prompt.submit({ text: 'please add the tests for this module and the other one', wait: false, origin: { kind: 'composer' } })
-  expect((await run($, '?')).text).toMatch(/^Usage:/)
 })

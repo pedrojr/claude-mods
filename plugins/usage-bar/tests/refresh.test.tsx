@@ -1,9 +1,10 @@
 import { expect, mock, test } from 'claude-code/testing'
+import type { On } from 'claude-code'
 
 const BAND = {
   plugin: 'usage-bar',
   component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 120, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 6, bodyColumns: 120, scroll: { offset: 0, bodyRows: 6 }, view: {} },
 } as const
 
 const turn = () => ({ answer: 'done', durationMs: 10, isAborted: false, turnId: 't', reason: 'answer' as const })
@@ -17,7 +18,7 @@ const limits = (session: number, week: number) => [
   { kind: 'seven_day', percentUsed: week, resetsAt: '2099-01-05T16:00:00Z' },
 ]
 
-function setup(on: Parameters<Parameters<typeof test>[1]>[1], files: Map<string, string>) {
+function setup(on: On, files: Map<string, string>) {
   const clock = mock.clock(on, { now: 10_000_000 })
   mock.store(on)
   on('env.get', (_, e) => ({ value: e.name === 'HOME' ? '/home/me' : undefined }))
@@ -121,7 +122,9 @@ test('the line shows the reset countdown, the context fill and the session cost'
 
   const band = await $.ui.mount({ ...BAND, surface: 'terminal' })
   const texts = (await band.findAll({ type: 'Text' })).map(t => t.text).join(' | ')
-  expect(texts).toContain('(8min) US$ 2.96')
+  // A prompt in another language leaves the line in English.
+  expect(texts).toContain('Session')
+  expect(texts).toContain('(8min) $2.96')
   expect(texts).toContain('(13h 48min)')
   expect(texts).toContain('(225k/1M)')
   expect(texts).toContain(' 23%')

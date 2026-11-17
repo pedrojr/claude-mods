@@ -12,6 +12,7 @@ import {
   startOfDay,
   toolName,
 } from '../hooks/stats'
+import { langOf } from '../hooks/i18n'
 
 const DAY = Date.parse('2026-11-08T00:00:00Z')
 const at = (time: string) => `2026-11-08T${time}Z`
@@ -114,6 +115,7 @@ describe('the report', () => {
     expect(r.sessions).toBe(1)
     expect(r.agents).toEqual({ total: 1, byType: [{ name: 'Explore', count: 1 }] })
     expect(reportText(r)).toContain('Tool calls: 2 · ok 1 · error 1')
+    expect(reportText(r, 'pt')).toContain('Chamadas de ferramenta: 2 · ok 1 · erro 1')
   })
 
   test('formats numbers and reads agent types', () => {
@@ -181,5 +183,13 @@ describe('cost, cache hit, top sessions and period', () => {
     const now = new Date(2026, 10, 10, 15, 30).getTime()
     expect(new Date(startOfDay(now, 7)).getDate()).toBe(4)
     expect(new Date(startOfDay(now, 7)).getHours()).toBe(0)
+  })
+
+  test("reads the operating system's language names", () => {
+    expect(langOf('pt-BR\r\n')).toBe('pt')
+    expect(langOf('(\n    "pt-BR",\n    "en-US"\n)')).toBe('pt')
+    expect(langOf('en_US.UTF-8')).toBe('en')
+    expect(langOf('de-DE')).toBe(null)
+    expect(langOf(undefined)).toBe(null)
   })
 })

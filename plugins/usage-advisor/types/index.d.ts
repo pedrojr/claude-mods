@@ -147,7 +147,6 @@ declare module 'claude-code' {
       pane: Shaped<Pane>
       icon: Icon
       lang: Lang
-      isChatLang: boolean
       isHidden: boolean
     }
   }

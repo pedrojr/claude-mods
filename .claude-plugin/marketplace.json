@@ -8,7 +8,7 @@
     {
       "name": "model-router",
       "source": "./plugins/model-router",
-      "description": "Picks the model from the first prompt of a session and the effort on each prompt; the model only moves up when a later prompt needs it. Gives each subagent its own model and effort."
+      "description": "Optional, off by default. Picks the model from the first prompt of a session and the effort on each prompt; the model only moves up when a later prompt needs it. Gives each subagent its own model and effort."
     },
     {
       "name": "usage-bar",
@@ -18,7 +18,7 @@
     {
       "name": "workspace",
       "source": "./plugins/workspace",
-      "description": "One side pane for the session's work: the running agents and sessions on top, the repository's changed files below, and the diff of the file you click at the bottom."
+      "description": "A side pane titled Agents with the sessions and agents running on the machine; a click opens that chat."
     },
     {
       "name": "usage-report",
@@ -28,7 +28,7 @@
     {
       "name": "usage-advisor",
       "source": "./plugins/usage-advisor",
-      "description": "Watches how a session spends tokens and shows an icon with the tip count at the end of usage-bar's line. A click, or /advisor, opens an audit of the project: preload, last 10 sessions, diagnosis, changes to approve one at a time, and habits."
+      "description": "Watches how a session spends tokens and shows an `A` at the end of usage-bar's line, yellow when tips apply. A click, or /advisor, opens an audit of the project: preload, last 10 sessions, diagnosis, changes to approve one at a time, and habits."
     }
   ]
 }

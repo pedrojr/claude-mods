@@ -2,21 +2,20 @@
 
 A compact, one-line usage meter for Claude Code. It draws above the prompt, in the terminal and in the desktop app, and shows how much of your current session (5-hour window) and of this week (7-day window) you have used, how full this session's context window is, what the session has cost, and the prompt cache:
 
-```
-Session ◔ 13% (8min) $2.96 │ Week ◔ 22% (5d 23h) │ Context ◔ 23% (225k/1M) │ ◷ 46m
-```
+![usage-bar above the prompt box](../../docs/images/usage-bar.png)
 
 - The ring before each percent fills by quarters (`○ ◔ ◑ ◕ ●`). The ring and the percent turn green below 50%, yellow from 50% to 79% and red from 80%.
 - The time in parentheses after `Session` and `Week` is what is left until that window resets: `(8min)`, `(13h 48min)`, `(5d 23h)`.
 - `Context` is the share of the context window this session fills, with its tokens and the window size in parentheses.
-- The cost after the session's reset time is the session's total so far, the same figure as `/cost` (`US$ 2.96` in Portuguese and Spanish). It is hidden while it is zero.
+- The cost after the session's reset time is the session's total so far, the same figure as `/cost`. It is hidden while it is zero.
 - The line takes about 70 columns, so it fits on one row in most windows. A narrower window wraps it onto a second line.
 - The line checks again every minute, even while the session sits idle. Every session on the machine shares its newest rate-limit reading in `~/.claude/plugins/data/usage-bar/limits.json`, so an idle session follows what the others spend. A window whose reset time has passed drops to 0% until the next reading.
 - The clock at the end of the line tracks the prompt cache (1 hour after the last response). It shows one of these, never both:
   - `◷ 46m` while it is warm: minutes left before it expires, counted down every minute and drawn yellow in the last 5 minutes.
   - `◷ ~61k` once it has likely expired: your next message will re-cache about that many tokens.
   - On a resumed session it starts from the engine's own idle time and token count.
-- The labels follow the language you write your prompts in: English, Portuguese (`Sessão`, `Semana`, `Contexto`) or Spanish (`Sesión`, `Semana`, `Contexto`).
+- The line is always in English, whatever language you write in.
+- With usage-advisor installed, an `A` icon closes the line. It is gray when the session calls for no tip and yellow when it does; a click runs `/advisor`. Its accessible name is `usage-advisor`.
 - The line stays hidden until Claude Code reports the rate limits, which happens after the first response of a session.
 - Collapse it with `ctrl+x ctrl+a` or the `[-]` beside it.
 

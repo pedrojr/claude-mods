@@ -50,23 +50,6 @@ export function shortModel(id: string): string {
   return ['haiku', 'sonnet', 'opus', 'fable'].find(m => id.toLowerCase().includes(m)) ?? id
 }
 
-// Common short words of each language; the one with most hits wins. The same
-// lists as usage-bar's, less Spanish, which reads as English here.
-const WORDS: Record<Lang, readonly string[]> = {
-  en: ['the', 'and', 'is', 'are', 'what', 'how', 'this', 'that', 'with', 'for', 'you', 'please', 'add', 'make', 'should', 'it'],
-  pt: ['não', 'que', 'uma', 'para', 'com', 'está', 'isso', 'esse', 'essa', 'você', 'também', 'como', 'fazer', 'mais', 'pode', 'deve', 'ao', 'são'],
-}
-
-export function detectLang(text: string): Lang | null {
-  const words = text.toLowerCase().match(/[a-zà-ÿ]+/g) ?? []
-  if (words.length < 3) return null
-  const set = new Set(words)
-  const pt = WORDS.pt.filter(w => set.has(w)).length + (/[ãõç]/.test(text) ? 2 : 0)
-  const en = WORDS.en.filter(w => set.has(w)).length
-  if (Math.max(pt, en) < 2) return null
-  return pt > en ? 'pt' : 'en'
-}
-
 /** A one-line description of a tool call, for the evidence of a large output. */
 export function describeCall(tool: string, input: Record<string, unknown>): string {
   const str = (k: string) => (typeof input[k] === 'string' ? (input[k] as string) : null)

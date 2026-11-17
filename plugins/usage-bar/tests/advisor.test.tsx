@@ -5,7 +5,7 @@ const BAND = {
   plugin: 'usage-bar',
   component: 'AbovePrompt',
   surface: 'terminal',
-  props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 140, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 6, bodyColumns: 140, scroll: { offset: 0, bodyRows: 6 }, view: {} },
 } as const
 
 /** An engine beneath with a context reading, usage-advisor's icon and a chip another plugin draws. */
@@ -42,7 +42,8 @@ test("the advisor's icon ends the line, a press runs /advisor, and the chip bene
   const tree = JSON.stringify(await band.drawn())
   expect(tree.indexOf('◷')).toBeLessThan(tree.indexOf('open-advisor'))
   expect(tree.indexOf('open-advisor')).toBeLessThan(tree.indexOf('chip'))
-  expect((await band.find({ type: 'Button', key: 'open-advisor' }))?.text).toBe('◆ 2')
+  expect((await band.find({ type: 'Button', key: 'open-advisor' }))?.text).toBe('A')
+  expect(tree).toContain('usage-advisor')
 
   await band.press({ key: 'open-advisor' })
   expect(ran).toEqual(['advisor'])

@@ -1,5 +1,5 @@
 import { expect, test } from 'claude-code/testing'
-import type { On } from 'claude-code'
+import type { On, SessionContextBreakdown } from 'claude-code'
 
 const at = (minutes: number) => new Date(Date.UTC(2026, 10, 10, 12, 0) + minutes * 60_000).toISOString()
 const TRANSCRIPT = [
@@ -24,7 +24,7 @@ const BREAKDOWN = {
   memoryFiles: [],
   mcpTools: [{ name: 'mcp__rea__open', serverName: 'rea', tokens: 8_000, isLoaded: true }],
   agents: [],
-}
+} as unknown as SessionContextBreakdown
 
 function engine(on: On) {
   on('session.start', (_, e) => ({ cwd: e.cwd }))
@@ -41,8 +41,8 @@ function engine(on: On) {
   // The projects folder and the project's folder answer alike: each keeps only the kind it looks for.
   on('fs.list', () => ({
     value: [
-      { name: 'd--dev-shop', kind: 'dir', size: 0, mtimeMs: 0 },
-      { name: 's1.jsonl', kind: 'file', size: TRANSCRIPT.length, mtimeMs: 5 },
+      { name: 'd--dev-shop', kind: 'dir', size: 0, mtimeMs: 0, isLink: false },
+      { name: 's1.jsonl', kind: 'file', size: TRANSCRIPT.length, mtimeMs: 5, isLink: false },
     ],
   }))
   on('fs.read', () => ({ value: TRANSCRIPT }))
@@ -76,7 +76,7 @@ test('/advisor opens the audit pane: diagnosis, changes one at a time, habits', 
 
   const view = await $.ui.mount({ ...PANE, props: { bodyColumns: 60 } } as never)
   // The audit runs in the background; wait until the pane shows it.
-  for (let i = 0; i < 50 && !(await view.find({ type: 'Text', text: /rea/ })); i++) await new Promise(r => setTimeout(r, 10))
+  for (let i = 0; i < 500 && !(await view.find({ type: 'Text', text: /rea/ })); i++) await Promise.resolve()
   expect(await view.find({ type: 'Text', text: /MCP "rea"/ })).toBeTruthy()
   expect(await view.find({ type: 'Text', text: /Cache expired|Cache expirado/ })).toBeTruthy()
   expect(await view.find({ type: 'Text', text: /\[(ESTIMATED|ESTIMADO)\]/ })).toBeTruthy()

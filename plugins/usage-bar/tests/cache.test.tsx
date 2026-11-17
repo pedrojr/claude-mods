@@ -3,7 +3,7 @@ import { expect, mock, test } from 'claude-code/testing'
 const BAND = {
   plugin: 'usage-bar',
   component: 'AbovePrompt',
-  props: { hasSurvey: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} },
+  props: { hasSurvey: false, isCollapsed: false, isWorking: false, maxRows: 6, bodyColumns: 100, scroll: { offset: 0, bodyRows: 6 }, view: {} },
 } as const
 
 const turn = (agentId?: string) => ({

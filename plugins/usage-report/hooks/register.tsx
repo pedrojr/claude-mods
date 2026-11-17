@@ -1,7 +1,8 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register } from 'claude-code'
 
-import type { Count, Report, Snapshot } from '../types'
+import type { Count, Lang, Report, Snapshot } from '../types'
+import { langOf, osLang, T } from './i18n'
 import {
   agentIdOf,
   agentTypeOf,
@@ -20,8 +21,8 @@ import {
 import type { FileInput, FileStats } from './stats'
 
 const PANE = 'usage-report'
-const TITLE = 'Usage'
 const COMMAND = 'report'
+const STORE_LANG = 'lang'
 // How often the open pane re-reads the transcripts that changed.
 const POLL_MS = 60 * 1000
 // `$.fs.read` takes files up to 4 MiB; larger transcripts are streamed through the OS.
@@ -33,6 +34,7 @@ const DOCK_COLUMNS = 48
 const snapshot = atom({ plugin: 'usage-report', key: 'snapshot' } as const, { report: null, loading: false, days: 1 } as Snapshot, {
   shape: 'report-2',
 })
+const lang = atom({ plugin: 'usage-report', key: 'lang' } as const, 'en' as Lang)
 
 // A report is a view only: none of its failures may get in the way of a turn.
 const ignore = (): void => {}
@@ -160,7 +162,8 @@ function refresh($: Engine, days?: number): Promise<Report | null> {
   // A change of period waits for the run in flight, then reads again.
   if (running && days === undefined) return running
   const before = running ?? Promise.resolve(null)
-  const run: Promise<Report | null> = (async () => {
+  let run: Promise<Report | null> | null = null
+  run = (async (): Promise<Report | null> => {
     await before.catch(ignore)
     try {
       await update($, snapshot, s => ({ ...s, loading: true, days: days ?? s.days }))
@@ -206,9 +209,19 @@ const day = (ms: number): string => {
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
+    // The last language read starts the session; the OS is asked again in the background.
+    const saved = langOf(await $.store.get(STORE_LANG).catch(() => undefined))
+    const l = saved ?? 'en'
+    await update($, lang, () => l)
+    void osLang($)
+      .then(async found => {
+        if (found !== (await read($, lang))) await update($, lang, () => found)
+        if (found !== saved) await $.store.set(STORE_LANG, found)
+      })
+      .catch(ignore)
     await $.command.register({
       name: COMMAND,
-      description: "Show today's usage (or the week's): tokens, cache hit, estimated cost, models, top sessions, tool calls, errors",
+      description: T[l].command,
       argumentHint: '[today | week]',
       immediate: true,
     })
@@ -216,15 +229,16 @@ export const register: Register = on => {
   })
 
   on('command.run', { command: COMMAND }, async ($, e) => {
+    const t = T[await read($, lang)]
     const days = parseDays(e.args)
-    if (days === null) return { text: 'Usage: /report [today | week]' }
+    if (days === null) return { text: t.usage }
     const result = await refresh($, days)
-    const opened = await $.ui.open({ id: PANE, title: TITLE, columns: DOCK_COLUMNS, focus: true }).catch(() => null)
+    const opened = await $.ui.open({ id: PANE, title: t.title, columns: DOCK_COLUMNS, focus: true }).catch(() => null)
     if (opened?.isPlaced) startPolling($)
-    if (!result) return { text: 'Usage report: the transcripts could not be read.' }
+    if (!result) return { text: t.unreadable }
     // Where the pane shows, a short line is enough; elsewhere the reply carries the report.
-    const span = result.days === 1 ? 'today' : `in the last ${result.days} days`
-    return { text: opened?.isPlaced ? `Usage report opened (${compact(totalOf(result.tokens))} tokens ${span}).` : reportText(result) }
+    const l = await read($, lang)
+    return { text: opened?.isPlaced ? t.opened(compact(totalOf(result.tokens)), result.days) : reportText(result, l) }
   })
 
   on('ui.close', async ($, e, next) => {
@@ -243,7 +257,8 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const { report: r, loading } = await read($, snapshot)
-    if (!r) return <Text dimColor>{loading ? 'Reading the transcripts…' : 'No report yet.'}</Text>
+    const w = T[await read($, lang)]
+    if (!r) return <Text dimColor>{loading ? w.reading : w.none}</Text>
 
     const heading = (key: string, text: string) => (
       <Box key={key} marginTop={1}>
@@ -269,33 +284,33 @@ export const register: Register = on => {
       <Box flexDirection="column">
         <Box flexDirection="row" justifyContent="space-between">
           <Text dimColor>
-            {r.days === 1 ? `today ${clock(r.dayStart)}–${clock(r.now)}` : `${day(r.dayStart)}–${day(r.now)} ${clock(r.now)}`}
-            {loading ? ' · updating…' : ''}
+            {r.days === 1 ? `${w.today} ${clock(r.dayStart)}–${clock(r.now)}` : `${day(r.dayStart)}–${day(r.now)} ${clock(r.now)}`}
+            {loading ? w.updating : ''}
           </Text>
           <Box flexDirection="row" gap={2}>
             <Button key="period" plain hotkey="w" onPress={() => void refresh($, r.days === 1 ? 7 : 1).catch(ignore)}>
-              {r.days === 1 ? '7 days' : 'Today'}
+              {r.days === 1 ? w.sevenDays : w.todayButton}
             </Button>
             <Button key="refresh" plain hotkey="r" onPress={() => void refresh($).catch(ignore)}>
-              ↻ Refresh
+              {w.refresh}
             </Button>
           </Box>
         </Box>
 
-        {heading('h-tokens', `Tokens · ${compact(total)}`)}
-        {row('t-in', 'input', compact(t.input))}
-        {row('t-out', 'output', compact(t.output))}
-        {row('t-cr', 'cache read', compact(t.cacheRead))}
-        {row('t-cw', 'cache write', compact(t.cacheWrite))}
-        {row('t-hit', 'cache hit', `${Math.round(hit * 100)}%`, hit >= 0.8 ? 'success' : hit >= 0.5 ? 'warning' : 'error')}
-        {row('t-usd', 'estimated cost (API prices)', usd(r.costUsd))}
+        {heading('h-tokens', `${w.tokens} · ${compact(total)}`)}
+        {row('t-in', w.input, compact(t.input))}
+        {row('t-out', w.output, compact(t.output))}
+        {row('t-cr', w.cacheRead, compact(t.cacheRead))}
+        {row('t-cw', w.cacheWrite, compact(t.cacheWrite))}
+        {row('t-hit', w.cacheHit, `${Math.round(hit * 100)}%`, hit >= 0.8 ? 'success' : hit >= 0.5 ? 'warning' : 'error')}
+        {row('t-usd', w.cost, usd(r.costUsd))}
 
-        {heading('h-models', `Models · ${responses} responses`)}
-        {r.models.length === 0 && <Text dimColor>none</Text>}
+        {heading('h-models', `${w.models} · ${responses} ${w.responses}`)}
+        {r.models.length === 0 && <Text dimColor>{w.empty}</Text>}
         {r.models.map(m => row(`m:${m.name}`, m.name, `${m.count} · ${compact(m.tokens)} tok · ${usd(m.costUsd)}`))}
 
-        {heading('h-top', 'Top sessions')}
-        {r.topSessions.length === 0 && <Text dimColor>none</Text>}
+        {heading('h-top', w.topSessions)}
+        {r.topSessions.length === 0 && <Text dimColor>{w.empty}</Text>}
         {r.topSessions.map((s, i) => (
           <Box key={`top:${i}`} flexDirection="column">
             <Text>
@@ -308,30 +323,30 @@ export const register: Register = on => {
           </Box>
         ))}
 
-        {heading('h-effort', 'Effort')}
-        {r.efforts.length === 0 && <Text dimColor>none</Text>}
+        {heading('h-effort', w.effort)}
+        {r.efforts.length === 0 && <Text dimColor>{w.empty}</Text>}
         {counts('e', r.efforts, responses)}
 
-        {heading('h-tools', `Tool calls · ${r.tools.total}`)}
-        {row('c-ok', 'ok', `${r.tools.ok} · ${percent(r.tools.ok, r.tools.total)}`, 'success')}
-        {row('c-err', 'error', String(r.tools.errors), r.tools.errors ? 'error' : undefined)}
-        {row('c-den', 'denied', String(r.tools.denied), r.tools.denied ? 'warning' : undefined)}
-        {r.tools.top.length > 0 && <Text dimColor>most used: {r.tools.top.map(c => `${c.name} ${c.count}`).join(', ')}</Text>}
-        {failed > 0 && <Text dimColor>most failed: {r.tools.failing.map(c => `${c.name} ${c.count}`).join(', ')}</Text>}
+        {heading('h-tools', `${w.toolCalls} · ${r.tools.total}`)}
+        {row('c-ok', w.ok, `${r.tools.ok} · ${percent(r.tools.ok, r.tools.total)}`, 'success')}
+        {row('c-err', w.error, String(r.tools.errors), r.tools.errors ? 'error' : undefined)}
+        {row('c-den', w.denied, String(r.tools.denied), r.tools.denied ? 'warning' : undefined)}
+        {r.tools.top.length > 0 && <Text dimColor>{w.mostUsed}: {r.tools.top.map(c => `${c.name} ${c.count}`).join(', ')}</Text>}
+        {failed > 0 && <Text dimColor>{w.mostFailed}: {r.tools.failing.map(c => `${c.name} ${c.count}`).join(', ')}</Text>}
 
-        {heading('h-fail', 'Failures')}
-        {row('f-retry', 'retries after a failed call', String(r.retries), r.retries ? 'warning' : undefined)}
-        {row('f-api', 'API errors', String(r.apiErrors), r.apiErrors ? 'error' : undefined)}
-        {row('f-int', 'interrupted turns', String(r.interrupts))}
+        {heading('h-fail', w.failures)}
+        {row('f-retry', w.retries, String(r.retries), r.retries ? 'warning' : undefined)}
+        {row('f-api', w.apiErrors, String(r.apiErrors), r.apiErrors ? 'error' : undefined)}
+        {row('f-int', w.interrupted, String(r.interrupts))}
 
-        {heading('h-sessions', 'Sessions')}
-        {row('s-main', 'sessions', String(r.sessions))}
-        {row('s-agents', 'subagents', String(r.agents.total))}
+        {heading('h-sessions', w.sessions)}
+        {row('s-main', w.sessionsRow, String(r.sessions))}
+        {row('s-agents', w.subagents, String(r.agents.total))}
         {counts('a', r.agents.byType, r.agents.total)}
 
         {r.skipped > 0 && (
           <Box marginTop={1}>
-            <Text color="warning">{r.skipped} transcript(s) could not be read.</Text>
+            <Text color="warning">{w.skipped(r.skipped)}</Text>
           </Box>
         )}
       </Box>

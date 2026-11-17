@@ -1,16 +1,16 @@
 # usage-advisor
 
-Watches how a session spends tokens and shows an icon at the end of usage-bar's line, with the number of tips the session calls for. A click on the icon, or `/advisor`, opens a pane and runs an audit of the project: what each session loads before your first prompt, the last 10 sessions, a diagnosis ranked by impact, changes you can approve one at a time, and the three habits that would save you the most.
+Watches how a session spends tokens and shows an `A` icon at the end of usage-bar's line, yellow when the session calls for tips. A click on the `A`, or `/advisor`, opens a pane and runs an audit of the project: what each session loads before your first prompt, the last 10 sessions, a diagnosis ranked by impact, changes you can approve one at a time, and the three habits that would save you the most.
 
 The mod only reads. It changes no file, setting, MCP server, hook, skill or agent.
 
+![usage-advisor pane on the Audit tab](../../docs/images/usage-advisor.png)
+
 ## The icon above the prompt
 
-```text
-Sessão ◕ 77% (1h 17min) │ Semana ◑ 45% (4d 20h) │ Contexto ◔ 27% (273k/1M) │ ◷ 38m │ ◆ 2
-```
+![usage-bar's line with the A at the end](../../docs/images/usage-bar.png)
 
-`◆ 2` means the session calls for two tips; `◇` in gray means none. A click on the icon opens the Advisor pane and runs the audit. The tips are listed at the top of the pane's Audit tab, the one that saves the most first, and `/advisor tips` lists them as text. The mod counts as the session runs:
+The `A` is yellow when the session calls for at least one tip and gray when it calls for none. Its accessible name is `usage-advisor`. A click on it opens the Advisor pane and runs the audit. The tips are listed at the top of the pane's Audit tab, the one that saves the most first, and `/advisor tips` lists them as text. The mod counts as the session runs:
 
 | Tip | When |
 | --- | --- |
@@ -75,4 +75,4 @@ See the [repository README](../../README.md) for the terminal prompt and desktop
 - The live counters only see the main conversation. Subagents have their own context.
 - The cold-cache tip assumes the 1-hour cache Claude Code uses on subscriptions. The audit does not assume a lifetime: it reads the cache writes in the transcripts after any pause over 5 minutes.
 - Transcripts are read from `~/.claude/projects/<project>/` (or `CLAUDE_CONFIG_DIR`). Those over 4 MiB are streamed.
-- The tips and the pane follow the language of the chat, Portuguese or English, read from your prompts. Before the first prompt they follow the app: the `language` setting of Claude Code, then VS Code's display language, then `LC_ALL`, `LC_MESSAGES` or `LANG`, then Windows' display language. In Portuguese the tags read `MEDIDO`, `ESTIMADO` and `INDISPONÍVEL`.
+- The tips and the pane follow the operating system's display language: Windows' UI language, the first language in macOS's preferences, or `LC_ALL`, `LC_MESSAGES` or `LANG` elsewhere. Portuguese and English are translated; any other language shows English. The language you write in does not change it. In Portuguese the tags read `MEDIDO`, `ESTIMADO` and `INDISPONÍVEL`.

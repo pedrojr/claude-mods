@@ -1,7 +1,10 @@
 {
   "name": "usage-bar",
-  "version": "0.9.1",
+  "version": "0.10.0",
   "description": "Compact one-line usage: current session and this week, each with percent, a bar and the reset time.",
+  "author": {
+    "name": "pedrojr"
+  },
   "license": "MIT",
   "types": "./types/index.d.ts"
 }

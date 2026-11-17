@@ -1,7 +1,7 @@
 import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register, SessionRateLimit } from 'claude-code'
 
-import type { Cache, Lang, Meter, Window, Windows } from '../types'
+import type { Cache, Meter, Window, Windows } from '../types'
 
 // What usage-advisor publishes for the icon at the end of the line; absent when it is not installed.
 const advisorIcon = { plugin: 'usage-advisor', key: 'icon' } as const
@@ -18,8 +18,6 @@ const cache = atom({ plugin: 'usage-bar', key: 'cache' } as const, {
   tokens: null,
   checkedAt: 0,
 } as Cache)
-
-const lang = atom({ plugin: 'usage-bar', key: 'lang' } as const, 'en' as Lang)
 
 const meter = atom({ plugin: 'usage-bar', key: 'meter' } as const, {
   contextTokens: null,
@@ -46,7 +44,6 @@ async function remeter($: Engine, usage: Parameters<typeof meterOf>[0]): Promise
 const CACHE_TTL_MS = 60 * 60 * 1000
 const CHECK_EVERY_MS = 60 * 1000
 const STORE_PREFIX = 'cache:'
-const STORE_LANG = 'lang'
 const STORE_KEEP_MS = 30 * 24 * 60 * 60 * 1000
 // Every session on the machine writes its newest rate-limit reading here, so an
 // idle session's bar follows what the others spend.
@@ -56,33 +53,6 @@ const SHARED_FILE = 'plugins/data/usage-bar/limits.json'
 // module; every hook below starts it again when it is gone.
 let ticker: { cancel: () => void } | null = null
 let sharedPath: string | null | undefined
-
-const LABELS: Record<Lang, { session: string; week: string; context: string }> = {
-  en: { session: 'Session', week: 'Week', context: 'Context' },
-  pt: { session: 'Sessão', week: 'Semana', context: 'Contexto' },
-  es: { session: 'Sesión', week: 'Semana', context: 'Contexto' },
-}
-
-// Common short words of each language; the one with most hits wins.
-const WORDS: Record<Lang, readonly string[]> = {
-  en: ['the', 'and', 'is', 'are', 'what', 'how', 'this', 'that', 'with', 'for', 'you', 'please', 'add', 'make', 'should', 'it'],
-  pt: ['não', 'que', 'uma', 'para', 'com', 'está', 'isso', 'esse', 'essa', 'você', 'também', 'como', 'fazer', 'mais', 'pode', 'deve', 'ao', 'são'],
-  es: ['que', 'una', 'para', 'con', 'está', 'esto', 'ese', 'esa', 'usted', 'también', 'como', 'hacer', 'más', 'puede', 'debe', 'los', 'las', 'del', 'por favor', 'qué'],
-}
-
-function detectLang(text: string): Lang | null {
-  const tokens = text.toLowerCase().match(/[a-zà-ÿ]+/g) ?? []
-  if (tokens.length < 3) return null
-  const set = new Set(tokens)
-  const score = (l: Lang) => WORDS[l].filter(w => set.has(w)).length
-  // Letters only one language uses tip the balance.
-  const pt = score('pt') + (/[ãõç]/.test(text) ? 2 : 0)
-  const es = score('es') + (/[ñ¿¡]/.test(text) ? 2 : 0)
-  const en = score('en')
-  const best = Math.max(pt, es, en)
-  if (best < 2) return null
-  return best === pt ? 'pt' : best === es ? 'es' : 'en'
-}
 
 function pick(rateLimits: readonly SessionRateLimit[], at: number): Windows {
   const find = (kind: string): Window | null => {
@@ -174,7 +144,7 @@ function arm($: Engine): void {
 const RINGS = ['○', '◔', '◑', '◕', '●'] as const
 function ring(percent: number): string {
   const p = Math.max(0, Math.min(100, percent))
-  return RINGS[p >= 100 ? 4 : p <= 0 ? 0 : Math.min(3, Math.max(1, Math.round(p / 25)))]
+  return RINGS[p >= 100 ? 4 : p <= 0 ? 0 : Math.min(3, Math.max(1, Math.round(p / 25)))] ?? '○'
 }
 
 function tone(percent: number): 'success' | 'warning' | 'error' {
@@ -197,10 +167,9 @@ function resetLabel(iso: string | null, now: number): string | null {
   return `${Math.floor(hours / 24)}d ${pad(hours % 24)}h`
 }
 
-// "$2.96" in English, "US$ 2.96" otherwise.
-function costLabel(usd: number, l: Lang): string {
-  const value = usd >= 100 ? usd.toFixed(0) : usd.toFixed(2)
-  return l === 'en' ? `$${value}` : `US$ ${value}`
+// "$2.96".
+function costLabel(usd: number): string {
+  return `$${usd >= 100 ? usd.toFixed(0) : usd.toFixed(2)}`
 }
 
 // "61k", "1.2M", "1M", "850".
@@ -225,18 +194,10 @@ const WARN_MINUTES = 5
 
 export const register: Register = on => {
   on('session.start', async ($, e, next) => {
-    const [usage, id, now, savedLang] = await Promise.all([
-      $.session.usage(),
-      $.session.id(),
-      $.clock.now(),
-      $.store.get(STORE_LANG),
-    ])
+    const [usage, id, now] = await Promise.all([$.session.usage(), $.session.id(), $.clock.now()])
     await remeter($, usage)
     // A reading of unknown age: any session's shared reading replaces it.
     await update($, windows, w => (w.at > 0 ? w : pick(usage.rateLimits, 0)))
-    if (savedLang === 'en' || savedLang === 'pt' || savedLang === 'es') {
-      await update($, lang, () => savedLang)
-    }
 
     // Restore the last response time kept for this session (survives restarts and reloads).
     const saved = (await $.store.get(STORE_PREFIX + id)) as Partial<Cache> | undefined
@@ -284,11 +245,6 @@ export const register: Register = on => {
 
   on('prompt.submit', async ($, e, next) => {
     arm($)
-    const detected = detectLang(e.text)
-    if (detected && detected !== (await read($, lang))) {
-      await update($, lang, () => detected)
-      await $.store.set(STORE_LANG, detected)
-    }
     return next(e)
   })
 
@@ -319,7 +275,7 @@ export const register: Register = on => {
   })
 
   on('ui.render', { component: 'AbovePrompt' }, async ($, e, next) => {
-    const [stored, c, l, m] = await Promise.all([read($, windows), read($, cache), read($, lang), read($, meter)])
+    const [stored, c, m] = await Promise.all([read($, windows), read($, cache), read($, meter)])
     const value = { session: current(stored.session, c.checkedAt), week: current(stored.week, c.checkedAt) }
     const expired = isExpired(c)
     const hasCache = c.lastResponseAt !== null
@@ -328,14 +284,13 @@ export const register: Register = on => {
     }
 
     const { Box, Text, Button } = $.ui.resolve(e)
-    const labels = LABELS[l]
     // "(8min)" after the percent; `extra` (the session cost) follows the reset time.
     const tailOf = (w: Window, extra: string | null = null) => {
       const reset = resetLabel(w.resetsAt, c.checkedAt)
       return [reset ? `(${reset})` : null, extra].filter(Boolean).join(' ') || null
     }
-    //   "US$ 2.96", drawn in the session item after its reset time.
-    const cost = m.costUsd !== null && m.costUsd > 0 ? costLabel(m.costUsd, l) : null
+    //   "$2.96", drawn in the session item after its reset time.
+    const cost = m.costUsd !== null && m.costUsd > 0 ? costLabel(m.costUsd) : null
     const sessionTail = value.session ? tailOf(value.session, cost) : null
     const weekTail = value.week ? tailOf(value.week) : null
     //   "Context ◔ 23% (225k/1M)"
@@ -352,7 +307,7 @@ export const register: Register = on => {
     //   expired: " │ ◷ ~61k" (tokens the next message re-caches)
     const left = minutesLeft(c)
 
-    //   "Sessão ◕ 72% (23min)": the ring and the percent in the window's tone.
+    //   "Session ◕ 72% (23min)": the ring and the percent in the window's tone.
     const meterText = (key: string, label: string, percent: number, tail: string | null) => (
       <Text key={key}>
         <Text bold>{label}</Text>
@@ -382,7 +337,7 @@ export const register: Register = on => {
     )
 
     const contextItem = context
-      ? [sep('sep-ctx'), meterText('context', labels.context, context.percent, context.tail)]
+      ? [sep('sep-ctx'), meterText('context', 'Context', context.percent, context.tail)]
       : null
 
     const cacheBody = expired ? (
@@ -396,7 +351,7 @@ export const register: Register = on => {
     ) : null
     const cacheItem = cacheBody ? [sep('sep2'), cacheBody] : null
 
-    //   " │ ◆ 2": usage-advisor's tips for the session (◇ when none); a press runs /advisor.
+    //   " │ A": usage-advisor's icon as a button with the default chrome, dim when the session calls for no tip; a press runs /advisor.
     const advisor = (await $.state.get(advisorIcon)).value
     const advisorItem =
       advisor && !advisor.isHidden
@@ -404,21 +359,20 @@ export const register: Register = on => {
             sep('sep3'),
             <Button
               key="open-advisor"
-              label="Advisor"
-              plain
+              label="usage-advisor"
               dimColor={advisor.count === 0}
               onPress={() => void $.command.run({ command: 'advisor' }).catch(() => {})}
             >
-              {advisor.count > 0 ? `◆ ${advisor.count}` : '◇'}
+              <Text color={advisor.count > 0 ? 'warning' : undefined}>A</Text>
             </Button>,
           ]
         : null
 
     const line = (
       <Box key="usage-bar-line" flexDirection="row" flexWrap="wrap" columnGap={1}>
-        {item('session', labels.session, value.session, sessionTail, cost)}
+        {item('session', 'Session', value.session, sessionTail, cost)}
         {sep('sep')}
-        {item('week', labels.week, value.week, weekTail, null)}
+        {item('week', 'Week', value.week, weekTail, null)}
         {contextItem}
         {cacheItem}
         {advisorItem}

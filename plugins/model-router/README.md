@@ -71,12 +71,16 @@ The corrections log is the second signal. The mod writes an entry when you run `
 
 ## Install
 
+model-router is optional and is not part of the default install of this repository's mods. It changes the model and effort of every session, so install it only if you want that. When you ask Claude to install the mods, it asks before adding this one.
+
 From a shell:
 
 ```bash
 claude plugin marketplace add pedrojr/claude-mods
 claude plugin install model-router@claude-mods --scope user
 ```
+
+To keep it installed but off, run `claude plugin disable model-router@claude-mods`; `claude plugin enable model-router@claude-mods` turns it back on.
 
 See the [repository README](../../README.md) for the terminal prompt and desktop app install steps.
 

@@ -24,7 +24,7 @@ const PANE = {
   component: 'Pane',
   requestId: 'workspace',
   props: {
-    title: 'Workspace',
+    title: 'Agents',
     isFocused: false,
     bodyColumns: 50,
     placement: 'dock',
@@ -108,9 +108,9 @@ test('another active session shows, and its title opens it in the desktop app', 
   await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
 
   const ui = await $.ui.mount({ ...PANE, surface: 'desktop' })
-  expect(await ui.find({ type: 'Text', text: 'AGENTS' })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: 'CHANGES' })).toBeTruthy()
-  expect(await ui.find({ type: 'Text', text: 'DIFF' })).toBeTruthy()
+  // Only the list: no Changes or Diff sections any more.
+  expect(await ui.find({ type: 'Text', text: 'CHANGES' })).toBeFalsy()
+  expect(await ui.find({ type: 'Text', text: 'DIFF' })).toBeFalsy()
   expect((await ui.find({ type: 'Text', text: /Refactor billing/ }))?.text).toBe('Refactor billing')
   expect((await ui.find({ type: 'Text', text: /billing\.ts/ }))?.text).toBe('↳ Edit: billing.ts')
   await ui.press({ key: 'open:session:other' })
@@ -118,10 +118,6 @@ test('another active session shows, and its title opens it in the desktop app', 
     ['rundll32', 'url.dll,FileProtocolHandler', 'claude://code/continue?session=local_abc-123&source=desktop_action'],
   ])
 
-  // Folding a section leaves its title line.
-  await ui.press({ key: 'fold:agents' })
-  expect(await ui.find({ type: 'Text', text: /Refactor billing/ })).toBeFalsy()
-  expect(await ui.find({ type: 'Text', text: 'AGENTS' })).toBeTruthy()
   await ui.unmount()
 
   // The terminal opened nothing by itself; the band's button does.
