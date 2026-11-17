@@ -2,7 +2,7 @@ import { atom, read, update } from 'claude-code'
 import type { EngineInterface as Engine, Register } from 'claude-code'
 
 import type { AgentsSnapshot, PaneState, SessionView } from '../types'
-import { age, openAgent, openSession, readSessions, show, shownSessions } from './agents'
+import { openAgent, openSession, readSessions, show, shownSessions } from './agents'
 import { ordered } from './sessions'
 
 const PANE = 'workspace'
@@ -35,9 +35,8 @@ async function refresh($: Engine): Promise<void> {
   const now = await $.clock.now()
   const sessions = await readSessions($, now).catch(() => [] as SessionView[])
   const current = await read($, agents)
-  const ticking = sessions.some(s => s.active || s.agents.some(a => a.active))
-  // Redraw on any change, and every poll while something runs (the ages tick).
-  if (ticking || !same(sessions, current.sessions)) await update($, agents, () => ({ sessions, now }))
+  // Redraw only on a change: the rows show no age, so an idle poll draws nothing new.
+  if (!same(sessions, current.sessions)) await update($, agents, () => ({ sessions, now }))
   if (!poller) {
     poller = $.clock.every(POLL_MS, () => {
       // A slow read (many transcripts) skips the ticks that come during it, so they do not pile up.
@@ -155,14 +154,14 @@ export const register: Register = on => {
   on('ui.render', { component: 'Pane', requestId: PANE }, async ($, e) => {
     const { Box, Text, Button } = $.ui.resolve(e)
     const state = await read($, pane)
-    const { sessions, now } = await read($, agents)
+    const { sessions } = await read($, agents)
     const viewing = e.props.view.agentId
 
     // This session and whatever runs; idle ones behind "+N idle".
     const { sessions: listed, hidden } = shownSessions(sessions, state.showIdle)
     const runningCount = sessions.reduce((n, s) => n + (s.active ? 1 : 0) + s.agents.filter(a => a.active).length, 0)
 
-    // One row: a dot (green while running, gray when idle), the title, its age; what it does now under it.
+    // One row: a dot (green while running, gray when idle), the title, where it runs; what it does now under it.
     const agentRow = (
       key: string,
       depth: number,
@@ -216,7 +215,7 @@ export const register: Register = on => {
               0,
               session.active,
               session.name,
-              [session.isSelf ? 'this session' : session.entrypoint, age(now - session.lastAt)].join(' · '),
+              session.isSelf ? 'this session' : session.entrypoint,
               session.lastLine,
               session.isSelf && !viewing,
               () => void openSession($, session).catch(ignore),
@@ -227,7 +226,7 @@ export const register: Register = on => {
                 depth + 1,
                 agent.active,
                 `${agent.id === viewing ? '▶ ' : ''}${agent.label}`,
-                `${agent.type} · ${age(now - agent.lastAt)}`,
+                agent.type,
                 agent.lastLine,
                 agent.id === viewing,
                 () => void openAgent($, session, agent).catch(ignore),

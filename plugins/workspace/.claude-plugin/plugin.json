@@ -1,6 +1,6 @@
 {
   "name": "workspace",
-  "version": "0.2.1",
+  "version": "0.2.2",
   "description": "A side pane titled Agents with the sessions and agents running on the machine; a click opens that chat.",
   "author": {
     "name": "pedrojr"

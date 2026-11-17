@@ -203,15 +203,6 @@ export async function openAgent($: Engine, session: SessionView, agent: AgentVie
   await openSession($, session)
 }
 
-/** "12s", "4m", "1h05m". */
-export function age(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000))
-  if (s < 60) return `${s}s`
-  const m = Math.floor(s / 60)
-  if (m < 60) return `${m}m`
-  return `${Math.floor(m / 60)}h${String(m % 60).padStart(2, '0')}m`
-}
-
 /**
  * What the Agents section lists: every session `readSessions` kept (running, or
  * its prompt cache still warm), in its order. Idle agents (warm cache, nothing
