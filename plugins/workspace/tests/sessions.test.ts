@@ -119,6 +119,21 @@ describe('what shows', () => {
     expect(shown.find(s => s.sessionId === 'mixed')?.agents.map(a => a.id)).toEqual(['new'])
   })
 
+  test('lists warm sessions most recent first, a running one or an agent counting as now', async () => {
+    const now = 10 * HOUR
+    const shown = visible(
+      [
+        session({ sessionId: 'older', lastAt: now - 40 * 60 * 1000 }),
+        session({ sessionId: 'newer', lastAt: now - 5 * 60 * 1000 }),
+        session({ sessionId: 'agent-touched', lastAt: now - 50 * 60 * 1000, agents: [agent({ id: 'y', lastAt: now - 1000 })] }),
+        session({ sessionId: 'running', active: true, lastAt: now - 30 * 60 * 1000 }),
+      ],
+      now,
+      HOUR,
+    )
+    expect(shown.map(s => s.sessionId)).toEqual(['running', 'agent-touched', 'newer', 'older'])
+  })
+
   test('nests agents under their parent, active first', async () => {
     const tree = ordered([
       agent({ id: 'done', lastAt: 5 }),

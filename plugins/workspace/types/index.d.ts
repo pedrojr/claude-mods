@@ -35,7 +35,7 @@ export type SessionView = {
 }
 
 export type AgentsSnapshot = {
-  /** Sessions with something active or a prompt cache still warm, busiest first. */
+  /** Sessions with something active or a prompt cache still warm, the most recent first. */
   sessions: SessionView[]
   /** `$.clock.now()` at the last refresh. */
   now: number

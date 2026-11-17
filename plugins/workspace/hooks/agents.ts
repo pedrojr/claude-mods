@@ -213,22 +213,16 @@ export function age(ms: number): string {
 }
 
 /**
- * What the Agents section lists: this session always, and anything running.
- * Idle sessions and agents (warm cache, nothing running) only with `showIdle`;
- * `hidden` counts the ones left out.
+ * What the Agents section lists: every session `readSessions` kept (running, or
+ * its prompt cache still warm), in its order. Idle agents (warm cache, nothing
+ * running) only with `showIdle`; `hidden` counts the ones left out.
  */
 export function shownSessions(sessions: readonly SessionView[], showIdle: boolean): { sessions: SessionView[]; hidden: number } {
   let hidden = 0
-  const shown: SessionView[] = []
-  for (const session of sessions) {
+  const shown = sessions.map(session => {
     const agents = showIdle ? session.agents : session.agents.filter(agent => agent.active)
-    const keep = showIdle || session.isSelf || session.active || agents.length > 0
-    if (!keep) {
-      hidden += 1 + session.agents.length
-      continue
-    }
     hidden += session.agents.length - agents.length
-    shown.push({ ...session, agents })
-  }
+    return { ...session, agents }
+  })
   return { sessions: shown, hidden }
 }

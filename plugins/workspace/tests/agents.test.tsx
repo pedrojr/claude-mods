@@ -55,17 +55,18 @@ const session = (over: Partial<SessionView>): SessionView => ({
 
 const agent = (id: string, active: boolean) => ({ id, label: id, type: 'Explore', active, lastAt: 0, lastLine: null, parentId: null })
 
-test('idle sessions and agents hide behind a count, this session stays', () => {
+test('every warm session stays listed in its order; idle agents hide behind a count', () => {
   const all = [
     session({ sessionId: 'self', isSelf: true, agents: [agent('a1', true), agent('a2', false)] }),
     session({ sessionId: 'busy', active: true }),
     session({ sessionId: 'idle', agents: [agent('a3', false)] }),
   ]
   const compact = shownSessions(all, false)
-  expect(compact.sessions.map(s => s.sessionId)).toEqual(['self', 'busy'])
+  expect(compact.sessions.map(s => s.sessionId)).toEqual(['self', 'busy', 'idle'])
   expect(compact.sessions[0]?.agents.map(a => a.id)).toEqual(['a1'])
-  // a2, the idle session and its agent a3.
-  expect(compact.hidden).toBe(3)
+  expect(compact.sessions[2]?.agents).toEqual([])
+  // The idle agents a2 and a3.
+  expect(compact.hidden).toBe(2)
   const full = shownSessions(all, true)
   expect(full.sessions.length).toBe(3)
   expect(full.hidden).toBe(0)

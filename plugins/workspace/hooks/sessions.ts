@@ -162,15 +162,20 @@ export function isShown(item: { active: boolean; lastAt: number }, now: number, 
   return item.active || now - item.lastAt < ttlMs
 }
 
-/** Keeps what is active or warm: a session shows when it or any of its agents does. */
+/**
+ * Keeps what is active or warm, a session when it or any of its agents is,
+ * the most recent first: what runs counts as `now`.
+ */
 export function visible(sessions: readonly SessionView[], now: number, ttlMs: number): SessionView[] {
   return sessions
     .map(session => ({ ...session, agents: session.agents.filter(agent => isShown(agent, now, ttlMs)) }))
     .filter(session => isShown(session, now, ttlMs) || session.agents.length > 0)
-    .sort((a, b) => rank(b) - rank(a) || b.lastAt - a.lastAt)
+    .sort((a, b) => recency(b, now) - recency(a, now))
 }
 
-const rank = (session: SessionView) => (session.active || session.agents.some(agent => agent.active) ? 1 : 0)
+/** When a session last did anything: its own transcript or any agent's, `now` while one runs. */
+const recency = (session: SessionView, now: number): number =>
+  Math.max(...[session, ...session.agents].map(item => (item.active ? now : item.lastAt)))
 
 /** Orders agents as a tree: each parent followed by its children, active first. */
 export function ordered(agents: readonly AgentView[]): { agent: AgentView; depth: number }[] {

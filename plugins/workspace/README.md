@@ -7,7 +7,8 @@ A side pane titled **Agents** that lists the sessions and agents running on the 
 ## What it lists
 
 - Sessions from every surface on the machine (desktop app, terminal, VS Code), with their agents and subagents nested under them. They come from the registry Claude Code keeps in `~/.claude/sessions/`.
-- This session is always listed, plus every session and agent that is running. Idle ones (finished, prompt cache still warm) are hidden behind `+N idle` on the top line; click it to list them, and `hide idle` to hide them again. Items whose prompt cache has expired (1 hour after their last write) are not listed.
+- Every session that is running or whose prompt cache is still warm is listed, the most recent first. A session's time is its last write or its agents' last write, and one that is running counts as now. Sessions whose prompt cache has expired (1 hour after their last write) are not listed.
+- Agents that are running are listed under their session. Idle ones (finished, prompt cache still warm) are hidden behind `+N idle` on the top line; click it to list them, and `hide idle` to hide them again.
 - The dot is green while the item runs and gray otherwise. Next to the title is where it runs (or the agent type) and how long ago it last wrote.
 - Under a running item, `↳` shows what it is doing: its latest tool call (`Bash: Run tests`), the first line of its last reply, or its last prompt.
 
