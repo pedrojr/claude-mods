@@ -172,11 +172,16 @@ const T = {
 
 const basisLabel = (b: Basis, l: Lang): string => T[l][b]
 
-/** Publishes the icon's state when it changed. */
-async function syncIcon($: Engine): Promise<void> {
+/**
+ * Publishes the icon's state when it changed, or always with `force`.
+ *
+ * usage-bar reads a value never written as "usage-advisor is not installed",
+ * so session.start forces the first write even when it equals the default.
+ */
+async function syncIcon($: Engine, force = false): Promise<void> {
   const [s, hidden, shown] = await Promise.all([read($, live), read($, isHidden), read($, icon)])
   const next: Icon = { count: liveTips(s, 'en').length, isHidden: hidden }
-  if (next.count !== shown.count || next.isHidden !== shown.isHidden) await update($, icon, () => next)
+  if (force || next.count !== shown.count || next.isHidden !== shown.isHidden) await update($, icon, () => next)
 }
 
 /** Updates what the session did, then the icon that counts its tips. */
@@ -336,7 +341,7 @@ export const register: Register = on => {
       immediate: true,
     })
     if ((await $.store.get(STORE_HIDDEN)) === true) await update($, isHidden, () => true)
-    await syncIcon($)
+    await syncIcon($, true)
     // The last language read starts the session; the OS is asked again in the background.
     const saved = langOf(await $.store.get(STORE_LANG).catch(() => undefined))
     if (saved) await update($, lang, () => saved)

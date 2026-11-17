@@ -37,6 +37,17 @@ test('the icon state counts the tips, and /advisor hide hides it', async ($, on)
   expect(seen.at(-1)).toEqual({ count: 1, isHidden: true })
 })
 
+test('a session with no tip still publishes the icon at start, so usage-bar draws it', async ($, on) => {
+  const seen: unknown[] = []
+  engine(on)
+  on('state.set', (_, e, next) => {
+    if (e.plugin === 'usage-advisor' && e.key === 'icon') seen.push(e.value)
+    return next(e)
+  })
+  await $.session.start({ cwd: '/', surface: 'terminal', isInteractive: true })
+  expect(seen).toEqual([{ count: 0, isHidden: false }])
+})
+
 test("the advisor speaks the operating system's language, whatever the chat's", async ($, on) => {
   engine(on, { OS: 'Windows_NT' })
   on('process.run', () => ({ value: { exitCode: 0, stdout: 'pt-BR\r\n', stderr: '', isStdoutTruncated: false, isStderrTruncated: false } }))
